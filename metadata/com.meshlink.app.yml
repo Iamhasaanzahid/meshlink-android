@@ -53,12 +53,8 @@ Builds:
       mkdir -p metadata
       cp -f ../F-DROID_METADATA_COMPLETE.yml metadata/com.meshlink.app.yml || true
     build: |
-      # Build release APK with signing (use debug signing for F-Droid)
+      # Build release APK (unsigned, F-Droid signs with its own key)
       ./gradlew assembleRelease \
-        -Pandroid.injected.signing.store.file=$HOME/debug.keystore \
-        -Pandroid.injected.signing.store.password=android \
-        -Pandroid.injected.signing.key.alias=androiddebugkey \
-        -Pandroid.injected.signing.key.password=android \
         -PmeshlinkApiUrl="https://meshlink-api.onrender.com" \
         --no-daemon
     output: |
