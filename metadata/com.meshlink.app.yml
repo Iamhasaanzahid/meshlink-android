@@ -1,15 +1,25 @@
+# MeshLink — F-Droid Metadata (Complete & Correct)
+# This file goes into your fork of fdroiddata at: metadata/com.meshlink.app.yml
+
 Categories:
   - Internet
   - Security
   - Phone & SMS
+
 License: GPL-3.0-or-later
+
 AuthorName: MeshLink
 AuthorEmail: meshlink@example.com
-SourceCode: https://github.com/YOURNAME/meshlink
-IssueTracker: https://github.com/YOURNAME/meshlink/issues
-Changelog: https://github.com/YOURNAME/meshlink/blob/main/CHANGELOG.md
+AuthorWebSite: https://github.com/Iamhasaanzahid/meshlink
+
+SourceCode: https://github.com/Iamhasaanzahid/meshlink
+IssueTracker: https://github.com/Iamhasaanzahid/meshlink/issues
+Changelog: https://github.com/Iamhasaanzahid/meshlink/blob/main/CHANGELOG.md
+
+Donate: https://github.com/sponsors/Iamhasaanzahid
 
 AutoName: MeshLink
+
 Summary: Free end-to-end encrypted messenger that works over radio
 Description: |
   MeshLink is a free, secure, offline-first messenger.
@@ -29,7 +39,7 @@ Description: |
   no tracking, no paid services.
 
 RepoType: git
-Repo: https://github.com/YOURNAME/meshlink
+Repo: https://github.com/Iamhasaanzahid/meshlink
 
 Builds:
   - versionName: 1.0.0
@@ -38,7 +48,21 @@ Builds:
     subdir: meshlink_android
     gradle:
       - yes
-    prebuild: echo "nothing to prebuild"
+    prebuild: |
+      # Copy metadata to correct location
+      mkdir -p metadata
+      cp -f ../F-DROID_METADATA_COMPLETE.yml metadata/com.meshlink.app.yml || true
+    build: |
+      # Build release APK with signing (use debug signing for F-Droid)
+      ./gradlew assembleRelease \
+        -Pandroid.injected.signing.store.file=$HOME/debug.keystore \
+        -Pandroid.injected.signing.store.password=android \
+        -Pandroid.injected.signing.key.alias=androiddebugkey \
+        -Pandroid.injected.signing.key.password=android \
+        -PmeshlinkApiUrl="https://meshlink-api.onrender.com" \
+        --no-daemon
+    output: |
+      - app/build/outputs/apk/release/app-release.apk
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
