@@ -1,6 +1,7 @@
 package com.meshlink.app.mesh
 
 import android.content.Context
+import android.net.wifi.p2p.WifiP2pDevice
 import android.util.Log
 import java.security.MessageDigest
 
@@ -47,6 +48,9 @@ class MeshEngine(private val context: Context) {
     private val ble = BleTransport(context)
     private val wifi = WifiDirectTransport(context)
 
+    /** Push-to-talk voice over the Wi-Fi Direct group. */
+    val voice = VoiceTransport(context)
+
     private val seen = LinkedHashMap<String, Long>()
     private val seenLock = Any()
 
@@ -85,6 +89,7 @@ class MeshEngine(private val context: Context) {
     fun stop() {
         ble.stop()
         wifi.stop()
+        voice.stop()
         bleActive = false
         wifiActive = false
     }
@@ -119,7 +124,14 @@ class MeshEngine(private val context: Context) {
         return when (effective) {
             TransportType.RADIO_SMS -> RadioTransport.sendText(context, destination, encryptedText)
             TransportType.WIFI_DIRECT -> wifi.send(bytes)
-            else -> RadioTransport.sendText(context, destination, encryptedText) || wifi.send(bytes)
+            TransportType.BLUETOOTH_LE -> sendFrame(destination, bytes, TransportType.BLUETOOTH_LE)
+            TransportType.AUTO -> when {
+                isRadioNumber(destination) ->
+                    RadioTransport.sendText(context, destination, encryptedText)
+                wifiActive && wifi.send(bytes) -> true
+                bleActive -> sendFrame(destination, bytes, TransportType.BLUETOOTH_LE)
+                else -> false
+            }
         }
     }
 
@@ -134,7 +146,8 @@ class MeshEngine(private val context: Context) {
             TransportType.WIFI_DIRECT -> wifi.send(frame)
             TransportType.AUTO -> {
                 var sent = false
-                if (RadioTransport.isAvailable(context)) {
+                // SMS can only address a real phone number, never a UIN.
+                if (isRadioNumber(destination) && RadioTransport.isAvailable(context)) {
                     sent = RadioTransport.sendFrame(context, destination, frame) || sent
                 }
                 if (bleActive) sent = ble.send(null, frame) > 0 || sent
@@ -147,7 +160,8 @@ class MeshEngine(private val context: Context) {
     // --------------------------------------------------------------- receiving
 
     private fun handleIncoming(fromAddress: String, transport: TransportType, bytes: ByteArray) {
-        val frame = MeshFrame.deserialize(bytes) ?: return
+        val frame = MeshFrame.deserialize(bytes)
+
         val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
 
@@ -160,8 +174,16 @@ class MeshEngine(private val context: Context) {
             }
         }
 
+        if (frame == null) {
+            // Raw payload (e.g. a large text sent over Wi-Fi Direct).
+            onFrameForMe?.invoke(fromAddress, transport, bytes)
+            return
+        }
+
         when {
-            frame.destNodeId == localNodeId -> {
+            // SMS is point-to-point: if it reached this SIM, it is for us. The
+            // destination id is a UIN hash and would not match a phone number.
+            frame.destNodeId == localNodeId || transport == TransportType.RADIO_SMS -> {
                 onFrameForMe?.invoke(fromAddress, transport, frame.payload)
             }
             frame.ttl > 1 -> {
@@ -183,6 +205,29 @@ class MeshEngine(private val context: Context) {
         }
     }
 
+    // -------------------------------------------------------------- wi-fi mesh
+
+    fun wifiPeers(): List<WifiP2pDevice> = wifi.peerDevices()
+
+    fun connectWifiPeer(device: WifiP2pDevice) = wifi.connect(device)
+
+    val wifiGroupOwnerIp: String? get() = wifi.groupOwnerIp
+
+    val wifiIsGroupOwner: Boolean get() = wifi.isGroupOwner
+
+    val wifiHasGroup: Boolean get() = wifi.hasGroup
+
+    val wifiConnectedPeers: Int get() = wifi.connectedPeerCount
+
+    /** Start push-to-talk voice on the current Wi-Fi Direct group. */
+    fun startVoice(): Boolean {
+        if (!wifi.hasGroup) return false
+        voice.start(wifi.isGroupOwner, wifi.groupOwnerIp)
+        return true
+    }
+
+    fun stopVoice() = voice.stop()
+
     // ------------------------------------------------------------------ status
 
     fun status(): Map<String, Any> = mapOf(
@@ -190,6 +235,10 @@ class MeshEngine(private val context: Context) {
         "bluetoothLeActive" to bleActive,
         "wifiDirectActive" to wifiActive,
         "blePeers" to ble.connectedPeerCount,
+        "wifiGroup" to wifi.hasGroup,
+        "wifiGroupOwner" to wifi.isGroupOwner,
+        "wifiGroupOwnerIp" to (wifi.groupOwnerIp ?: ""),
+        "wifiPeers" to wifi.peerDevices().size,
         "localNodeId" to localNodeId,
     )
 }

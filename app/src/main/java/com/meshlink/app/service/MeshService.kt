@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.meshlink.app.MainActivity
 import com.meshlink.app.R
+import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.MeshEngine
 import com.meshlink.app.mesh.TransportType
 
@@ -41,6 +42,8 @@ class MeshService : Service() {
         createChannel()
         val mesh = MeshEngine(applicationContext)
         engine = mesh
+        // Restore the saved identity so relay addressing survives a restart.
+        SessionStore.uin(this)?.let { mesh.configure(it) }
         mesh.start()
     }
 

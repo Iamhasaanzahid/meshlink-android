@@ -240,6 +240,7 @@ class BleTransport(private val context: Context) {
     private val clientCallback = object : android.bluetooth.BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+                runCatching { gatt.requestMtu(517) }
                 gatt.discoverServices()
             } else if (newState == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
                 runCatching { gatt.close() }

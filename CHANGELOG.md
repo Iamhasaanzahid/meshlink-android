@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.1.0 — 2026-11-14
+
+### Added
+- Full in-app **Chat screen** with message history, delivery state and a
+  per-message transport picker (Auto / SIM / Bluetooth / Wi-Fi Direct)
+- **Call screen**: call over the SIM (normal cellular voice) and free local
+  **push-to-talk voice over Wi-Fi Direct** (8 kHz PCM, hold-to-talk)
+- **Radios screen**: live status of all three radios, nearby Wi-Fi Direct
+  peers, one-tap connect and the current mesh node id
+- Incoming messages now appear in the UI (SMS radio text + BLE/Wi-Fi frames)
+- Wi-Fi Direct transport rewritten with persistent sockets, automatic group
+  formation and peer auto-connect
+- Offline signup: if the backend is unreachable, a local `OFF-XXXXXX` UIN is
+  created so radio messaging still works with no internet
+- Session persistence: UIN is remembered, service reconnects on launch and
+  after reboot; explicit Logout
+- Runtime permissions now include Phone and Microphone
+- BLE MTU negotiation for larger mesh frames
+
+### Fixed
+- AUTO routing no longer tries to SMS a UIN (only real phone numbers)
+- Large payloads/frames are delivered to the UI instead of being dropped
+- Signup network call moved off the main thread
+- Logout no longer stops the mesh engine for the next session
+
 ## 1.0.0 — 2026-11-13
 
 First public release.

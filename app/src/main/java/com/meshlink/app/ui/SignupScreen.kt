@@ -11,14 +11,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meshlink.app.api.BackendApi
-import com.meshlink.app.service.startMeshService
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 private val Purple = Color(0xFF6750A4)
 private val PurpleLight = Color(0xFFEADDFF)
@@ -27,12 +30,13 @@ private val Muted = Color(0xFF625B71)
 private val Ink = Color(0xFF1D1B20)
 
 @Composable
-fun SignupScreen() {
-    val context = LocalContext.current
+fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
+    val scope = rememberCoroutineScope()
 
     var email by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var generatedUin by remember { mutableStateOf("") }
+    var offlineUin by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
@@ -112,15 +116,23 @@ fun SignupScreen() {
                 onClick = {
                     error = ""
                     isLoading = true
-                    val api = BackendApi()
-                    val uin = api.signupUin(email.trim(), displayName.trim())
-                    isLoading = false
-                    if (uin != null) {
-                        generatedUin = uin
-                        // UIN ab set hai — radio mesh ko isi identity ke saath start karo.
-                        startMeshService(context, uin)
-                    } else {
-                        error = "Signup fail hua — email/display name check karein."
+                    scope.launch {
+                        val uin = withContext(Dispatchers.IO) {
+                            runCatching {
+                                BackendApi().signupUin(email.trim(), displayName.trim())
+                            }.getOrNull()
+                        }
+                        isLoading = false
+                        if (uin != null) {
+                            generatedUin = uin
+                            offlineUin = false
+                        } else {
+                            // No internet? The app must still work — create a local
+                            // identity so radio/BLE/Wi-Fi messaging is available.
+                            generatedUin = "OFF-" + UUID.randomUUID().toString()
+                                .replace("-", "").take(6).uppercase()
+                            offlineUin = true
+                        }
                     }
                 },
                 enabled = !isLoading && email.isNotBlank() && displayName.isNotBlank(),
@@ -160,10 +172,22 @@ fun SignupScreen() {
                         Text(generatedUin, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Purple)
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Share this with friends to connect securely",
+                            if (offlineUin)
+                                "Offline ID created — server unreachable, radios still work"
+                            else
+                                "Share this with friends to connect securely",
                             fontSize = 12.sp,
                             color = Muted,
                         )
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = { onSignupSuccess(generatedUin, displayName.trim()) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Purple),
+                        ) {
+                            Text("Open MeshLink", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -177,7 +201,7 @@ fun SignupScreen() {
             RadioStatusCard()
 
             Spacer(Modifier.height(14.dp))
-            Text("v1.0.0 · Free Forever", fontSize = 12.sp, color = Color(0xFF9E9A9F))
+            Text("v1.1.0 · Free Forever", fontSize = 12.sp, color = Color(0xFF9E9A9F))
         }
     }
 }

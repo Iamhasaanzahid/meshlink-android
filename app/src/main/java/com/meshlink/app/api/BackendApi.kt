@@ -24,8 +24,8 @@ class BackendApi {
         val connection = url.openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
         connection.setRequestProperty("Content-Type", "application/json")
-        connection.connectTimeout = 15000
-        connection.readTimeout = 15000
+        connection.connectTimeout = 8000
+        connection.readTimeout = 8000
         connection.doOutput = true
 
         connection.outputStream.use { it.write(body.toString().toByteArray()) }
@@ -61,7 +61,7 @@ class BackendApi {
             .put("recipient_uin", recipientUin)
             .put("msg_type", "text")
             .put("content_plain", encryptedContent)
-        val response = post("/api/v1/message/send") ?: return false
+        val response = post("/api/v1/message/send", payload) ?: return false
         return try {
             JSONObject(response).optString("status") == "sent"
         } catch (_: Exception) {

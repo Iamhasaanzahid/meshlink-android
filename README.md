@@ -14,6 +14,35 @@ and can travel over three real radios with no internet:
 
 Multi-hop TTL forwarding (default 5 hops) extends the local mesh.
 
+## What the app does (v1.1)
+
+- **Signup** — email only, or a fully offline `OFF-XXXXXX` ID when the server
+  is unreachable. The UIN is remembered on the device.
+- **Chat** — message any UIN (Bluetooth/Wi-Fi mesh) or phone number (SMS radio).
+  Pick `Auto`, `SIM`, `Bluetooth` or `Wi-Fi` per message; Auto picks the right
+  radio for the destination. Incoming messages appear instantly.
+- **Call** — call a phone number over the cellular voice channel, or join a
+  free **push-to-talk voice group over Wi-Fi Direct** (hold to talk).
+- **Radios** — live status for all three radios, nearby Wi-Fi Direct peers with
+  one-tap connect, current mesh node id.
+
+Every radio runs at the same time in a foreground service, so messaging keeps
+working while the app is in the background and after a reboot.
+
+## Build without Android Studio
+
+```bash
+# one-time SDK install (command line tools)
+export ANDROID_HOME=$HOME/Android/Sdk
+sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+cd meshlink_android
+echo "sdk.dir=$ANDROID_HOME" > local.properties
+./gradlew assembleDebug
+```
+
+The debug APK lands in `app/build/outputs/apk/debug/app-debug.apk`.
+
 > A plain FM radio receiver cannot transmit data, so the app uses the cellular
 > modem — the phone radio that can both send and receive — for long-range radio
 > messaging. This works even when mobile data and Wi-Fi are off.
