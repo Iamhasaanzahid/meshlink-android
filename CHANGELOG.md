@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.1 — 2026-11-16
+
+### Fixed
+- Android 7.x (API 24–25) crashed when an incoming call tried to vibrate.
+  The vibration now uses the pre-Android-8 API on older devices.
+- The microphone is checked before a call starts, so a denied permission ends
+  the call with a message instead of a crash.
+- Declare `ACCESS_COARSE_LOCATION` next to the fine permission, as Android
+  requires for Wi-Fi Direct scanning on Android 12 and older.
+
 ## 1.5.0 — 2026-11-16
 
 ### Added

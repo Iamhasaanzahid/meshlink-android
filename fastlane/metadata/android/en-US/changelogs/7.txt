@@ -1,0 +1,5 @@
+1.5.1
+
+* Fix incoming-call vibration on Android 7
+* Check microphone permission before starting a call
+* Declare coarse location alongside fine location

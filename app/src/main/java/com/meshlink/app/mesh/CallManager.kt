@@ -4,12 +4,15 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.Manifest
+import android.content.pm.PackageManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -355,6 +358,13 @@ object CallManager {
     }
 
     private fun buildRecord(): AudioRecord {
+        val ctx = appContext
+        if (ctx != null && ContextCompat.checkSelfPermission(
+                ctx, Manifest.permission.RECORD_AUDIO,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            throw SecurityException("Microphone permission missing")
+        }
         val minBuffer = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         )
@@ -440,9 +450,15 @@ object CallManager {
                 @Suppress("DEPRECATION")
                 ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
-            vibrator?.vibrate(
-                VibrationEffect.createWaveform(longArrayOf(0, 800, 800), 0)
-            )
+            val v = vibrator
+            if (v != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 800), 0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v.vibrate(longArrayOf(0, 800, 800), 0)
+                }
+            }
         }
     }
 

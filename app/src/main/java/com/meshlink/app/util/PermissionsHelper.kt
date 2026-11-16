@@ -49,9 +49,14 @@ object PermissionsHelper {
         // 13+ the Nearby devices permission replaces it, so do not ask for it.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             list += Item(
-                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
                 "Location",
                 "Android requires this to scan for nearby Wi-Fi Direct phones. MeshLink never reads or stores your location.",
+            )
+            list += Item(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                "Location",
+                "Same Wi-Fi Direct scan. Android asks for both together; nothing is read or stored.",
             )
         }
 
