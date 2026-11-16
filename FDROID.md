@@ -29,7 +29,7 @@ Nothing in the app or metadata is blocked. `fdroid lint` passes with 0 issues.
 - License: GPL-3.0-or-later, `LICENSE` in the repository root.
 - Distinct application ID: `com.meshlink.app`.
 - Public source: <https://github.com/Iamhasaanzahid/meshlink-android>.
-- Tagged releases: `v1.5.1` (versionCode 7) with an installable APK attached.
+- Tagged releases: `v1.6.0` (versionCode 8) with an installable APK attached.
 - Fastlane metadata in the upstream repo:
   `fastlane/metadata/android/en-US/` with `title.txt`,
   `short_description.txt`, `full_description.txt`, `changelogs/3.txt`,
