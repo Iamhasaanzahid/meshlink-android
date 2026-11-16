@@ -237,6 +237,7 @@ object ChatRepository {
             body = message.body,
             senderName = displayName,
             allowSms = allowSms,
+            smsNumber = phoneFor(message.chatId),
         ) ?: false
 
         val status = if (ok) MsgStatus.SENT else MsgStatus.FAILED
@@ -246,7 +247,14 @@ object ChatRepository {
     }
 
     /** Called by the mesh when a message arrives. */
-    fun onIncoming(from: String, messageId: String, body: String, transport: String, senderName: String) {
+    fun onIncoming(
+        from: String,
+        messageId: String,
+        body: String,
+        transport: String,
+        senderName: String,
+        senderPhone: String = "",
+    ) {
         val peer = from.trim()
         if (peer.isEmpty() || body.isEmpty()) return
 
@@ -265,6 +273,9 @@ object ChatRepository {
         scope.launch {
             insertMessage(msg)
             touchChat(peer, resolveName(peer, senderName), body, msg.timestamp, transport, 1)
+            if (senderPhone.isNotBlank() && senderPhone != peer) {
+                savePhoneAlias(peer, senderPhone)
+            }
             refreshMessages(peer)
             refreshChats()
             val chat = _chats.value.firstOrNull { it.peer == peer }
@@ -284,6 +295,28 @@ object ChatRepository {
             ).use { if (it.moveToFirst()) it.getString(0) else null }
             if (chatId != null) refreshMessages(chatId)
         }
+    }
+
+    /** Remembers a phone number shared by a mesh peer, for the SMS fallback. */
+    private fun savePhoneAlias(peer: String, phone: String) {
+        if (!phone.trim().matches(Regex("^\\+?[0-9]{7,15}$"))) return
+        runCatching {
+            db.writableDatabase.execSQL(
+                "UPDATE chats SET phone = ? WHERE peer = ?",
+                arrayOf(phone.trim(), peer),
+            )
+        }
+    }
+
+    /** The SMS address of a chat, if the other side has shared one. */
+    fun phoneFor(peer: String): String {
+        if (!initialised) return ""
+        return runCatching {
+            db.readableDatabase.rawQuery(
+                "SELECT phone FROM chats WHERE peer = ? LIMIT 1",
+                arrayOf(peer),
+            ).use { c -> if (c.moveToFirst()) c.getString(0) ?: "" else "" }
+        }.getOrDefault("")
     }
 
     private fun insertMessage(msg: Message) {

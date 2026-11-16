@@ -71,8 +71,8 @@ class MeshService : Service() {
         engine = mesh
         SessionStore.uin(this)?.let { mesh.configure(it) }
 
-        mesh.onMessageForMe = { from, id, body, senderName, transport ->
-            ChatRepository.onIncoming(from, id, body, transport.name, senderName)
+        mesh.onMessageForMe = { from, id, body, senderName, transport, senderPhone ->
+            ChatRepository.onIncoming(from, id, body, transport.name, senderName, senderPhone)
         }
         mesh.onAckFor = { id -> ChatRepository.onDelivered(id) }
 

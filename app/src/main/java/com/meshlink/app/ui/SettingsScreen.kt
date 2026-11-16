@@ -18,10 +18,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,10 +45,14 @@ fun SettingsScreen(
     wifiPeers: List<WifiP2pDevice>,
     maxHops: Int,
     onMaxHopsChange: (Int) -> Unit,
+    myPhone: String,
+    onSavePhone: (String) -> Unit,
     onConnectPeer: (WifiP2pDevice) -> Unit,
     onRefreshPeers: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    var phoneDraft by remember(myPhone) { mutableStateOf(myPhone) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -84,6 +93,44 @@ fun SettingsScreen(
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                     )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionTitle("SMS reach")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    "My phone number",
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = phoneDraft,
+                    onValueChange = { phoneDraft = it },
+                    placeholder = { Text("+92 3xx xxxxxxx") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Shared with people you chat with, so they can reach you by SMS " +
+                            "when no MeshLink phone is in between. Leave empty to share nothing.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { onSavePhone(phoneDraft.trim()) }) { Text("Save") }
                 }
             }
         }

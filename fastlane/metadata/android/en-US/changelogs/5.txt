@@ -1,0 +1,5 @@
+1.4.0
+
+* Share an optional phone number so messages fall back to SMS when the mesh is out of range
+* "My phone number" field in Settings; empty means nothing is shared
+* Replies also fall back to SMS

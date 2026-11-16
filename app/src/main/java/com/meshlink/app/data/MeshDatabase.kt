@@ -10,7 +10,7 @@ import android.database.sqlite.SQLiteOpenHelper
  * frames themselves, which travel over SMS / Bluetooth LE / Wi-Fi Direct.
  */
 class MeshDatabase(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "meshlink.db", null, 1) {
+    SQLiteOpenHelper(context.applicationContext, "meshlink.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -36,7 +36,8 @@ class MeshDatabase(context: Context) :
                 last_message TEXT NOT NULL,
                 last_ts INTEGER NOT NULL,
                 unread INTEGER NOT NULL DEFAULT 0,
-                last_transport TEXT NOT NULL DEFAULT 'AUTO'
+                last_transport TEXT NOT NULL DEFAULT 'AUTO',
+                phone TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent()
         )
@@ -70,7 +71,10 @@ class MeshDatabase(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // v1 — nothing to migrate yet.
+        if (oldVersion < 2) {
+            // Phone number shared by the other side, used for the SMS fallback.
+            db.execSQL("ALTER TABLE chats ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
+        }
     }
 
     companion object {

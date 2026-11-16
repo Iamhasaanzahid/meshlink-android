@@ -58,8 +58,8 @@ class MeshEngine(private val context: Context) {
 
     /** A complete text message arrived and is addressed to us. */
     var onMessageForMe:
-        ((from: String, messageId: String, body: String, senderName: String, transport: TransportType) -> Unit)? =
-        null
+        ((from: String, messageId: String, body: String, senderName: String,
+          transport: TransportType, senderPhone: String) -> Unit)? = null
 
     /** The receiving phone confirmed delivery of [messageId]. */
     var onAckFor: ((messageId: String) -> Unit)? = null
@@ -121,7 +121,7 @@ class MeshEngine(private val context: Context) {
     fun start() {
         RadioTransport.onFrame = { from, bytes -> handleIncoming(from, TransportType.RADIO_SMS, bytes) }
         RadioTransport.onText = { from, text ->
-            onMessageForMe?.invoke(from, newId(text.toByteArray()), text, "", TransportType.RADIO_SMS)
+            onMessageForMe?.invoke(from, newId(text.toByteArray()), text, "", TransportType.RADIO_SMS, "")
         }
 
         if (ble.isSupported) {
@@ -165,6 +165,7 @@ class MeshEngine(private val context: Context) {
         body: String,
         senderName: String = "",
         allowSms: Boolean = true,
+        smsNumber: String? = null,
     ): Boolean {
         val target = destination.trim()
         if (target.isEmpty() || body.isEmpty()) return false
@@ -173,7 +174,7 @@ class MeshEngine(private val context: Context) {
                 Log.w(TAG, "cannot build frames", it)
                 return false
             }
-        return sendFrames(target, frames, allowSms)
+        return sendFrames(target, frames, allowSms, smsNumber)
     }
 
     /** True when [destination] can be dialled/SMSed over the cellular radio. */
@@ -192,8 +193,16 @@ class MeshEngine(private val context: Context) {
         destination: String,
         frames: List<ByteArray>,
         allowSms: Boolean = true,
+        smsNumber: String? = null,
     ): Boolean {
-        val numeric = isRadioNumber(destination)
+        // A mesh id (OFF-XXXXXX) is not dialable. If the other side shared a
+        // phone number, use it for the SMS hop so a message can cross the
+        // country when no mesh peer is in range.
+        val smsTo = when {
+            !smsNumber.isNullOrBlank() && isRadioNumber(smsNumber) -> smsNumber.trim()
+            isRadioNumber(destination) -> destination.trim()
+            else -> null
+        }
 
         if (wifiActive) {
             var ok = true
@@ -205,9 +214,9 @@ class MeshEngine(private val context: Context) {
             for (f in frames) ok = ble.send(null, f) > 0 && ok
             if (ok) return true
         }
-        if (allowSms && numeric && RadioTransport.isAvailable(context)) {
+        if (allowSms && smsTo != null && RadioTransport.isAvailable(context)) {
             var ok = true
-            for (f in frames) ok = RadioTransport.sendFrame(context, destination, f) && ok
+            for (f in frames) ok = RadioTransport.sendFrame(context, smsTo, f) && ok
             if (ok) return true
         }
         return false
@@ -219,11 +228,13 @@ class MeshEngine(private val context: Context) {
         body: String,
         senderName: String,
     ): List<ByteArray> {
+        val myPhone = com.meshlink.app.data.SessionStore.phone(context)
         val json = JSONObject()
             .put("i", messageId)
             .put("b", body)
             .put("n", senderName)
             .put("t", System.currentTimeMillis())
+            .apply { if (myPhone.isNotBlank()) put("p", myPhone) }
             .toString()
         val payload = json.toByteArray(Charsets.UTF_8)
         val destNode = MeshFrame.nodeId16(destination)
@@ -295,7 +306,7 @@ class MeshEngine(private val context: Context) {
             // Raw payload (large text from an older build).
             val text = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull() ?: return
             if (text.isEmpty()) return
-            onMessageForMe?.invoke(fromAddress, newId(bytes), text, "", transport)
+            onMessageForMe?.invoke(fromAddress, newId(bytes), text, "", transport, "")
             return
         }
 
@@ -382,17 +393,19 @@ class MeshEngine(private val context: Context) {
         var id: String? = null
         var body = raw
         var name = ""
+        var phone = ""
         runCatching {
             val json = JSONObject(raw)
             id = json.optString("i", "")
             body = json.optString("b", raw)
             name = json.optString("n", "")
+            phone = json.optString("p", "")
         }
 
         val messageId = id?.takeIf { it.isNotEmpty() } ?: newId(payload)
         if (body.isEmpty()) return
 
-        onMessageForMe?.invoke(from, messageId, body, name, transport)
+        onMessageForMe?.invoke(from, messageId, body, name, transport, phone)
         // Confirm receipt so the sender sees double ticks.
         sendAck(from, messageId)
     }

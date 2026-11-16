@@ -12,6 +12,7 @@ object SessionStore {
     private const val PREFS = "meshlink_session"
     private const val KEY_UIN = "uin"
     private const val KEY_NAME = "display_name"
+    private const val KEY_PHONE = "phone_number"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -21,6 +22,17 @@ object SessionStore {
 
     fun displayName(context: Context): String =
         prefs(context).getString(KEY_NAME, "") ?: ""
+
+    /**
+     * Optional phone number, used only for the SMS fallback. It is shared with
+     * people you chat with so they can reach you when the mesh cannot.
+     */
+    fun phone(context: Context): String =
+        prefs(context).getString(KEY_PHONE, "") ?: ""
+
+    fun savePhone(context: Context, phone: String) {
+        prefs(context).edit().putString(KEY_PHONE, phone.trim()).apply()
+    }
 
     fun save(context: Context, uin: String, displayName: String = "") {
         prefs(context).edit()

@@ -33,6 +33,9 @@ crowd, a building or a village where the network is down.
   (1–20, default 8) to trade speed for reach.
 - **Store-and-forward** — undelivered messages keep retrying over Wi-Fi Direct
   and Bluetooth LE as the phone moves between people.
+- **SMS reach** — add your phone number in Settings and messages fall back to
+  SMS when no mesh peer is in range, so two users can keep chatting anywhere
+  there is mobile signal. Empty by default: nothing is shared until you set it.
 - **Fully offline identity** — the ID is generated on the phone. Nothing is
   uploaded anywhere.
 
@@ -77,6 +80,8 @@ Android gates behind that permission. The app does not talk to any server.
 
 ## Status
 
+- `1.4.0` — optional phone number with SMS fallback, so messages reach across
+  the country when the radio mesh cannot.
 - `1.3.0` — relay hops setting (1–20 phones), store-and-forward retries,
   coverage card, signed release builds.
 - `1.2.0` — WhatsApp-style UI, persistent chats, working Wi-Fi Direct calls,

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0 — 2026-11-16
+
+### Added
+- **SMS reach across the country**: the app can now share an optional phone
+  number with people you chat with. If a message cannot travel over Wi-Fi
+  Direct or Bluetooth LE, it falls back to SMS to that number, so two users
+  can keep messaging anywhere Pakistan has mobile signal.
+- "My phone number" field in Settings; leave it empty and nothing is shared.
+- The receiving phone saves the number, so replies also work over SMS.
+
+### Changed
+- The chat database is now version 2, adding a `phone` column. The upgrade is
+  automatic and keeps existing chats.
+
 ## 1.3.0 — 2026-11-16
 
 ### Added

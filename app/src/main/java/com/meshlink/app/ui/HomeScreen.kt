@@ -54,6 +54,7 @@ import androidx.core.content.ContextCompat
 import com.meshlink.app.data.Chat
 import com.meshlink.app.data.ChatRepository
 import com.meshlink.app.data.MeshSettings
+import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.CallManager
 import com.meshlink.app.mesh.CallPhase
 import com.meshlink.app.service.MeshService
@@ -84,6 +85,7 @@ fun HomeScreen(
     var query by remember { mutableStateOf("") }
 
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
+    var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
 
     var engine by remember { mutableStateOf(MeshService.engine) }
     var status by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
@@ -256,6 +258,11 @@ fun HomeScreen(
                         onMaxHopsChange = {
                             maxHops = it
                             MeshSettings.setMaxHops(context, it)
+                        },
+                        myPhone = myPhone,
+                        onSavePhone = {
+                            myPhone = it
+                            SessionStore.savePhone(context, it)
                         },
                         onConnectPeer = { engine?.connectWifiPeer(it) },
                         onRefreshPeers = {
