@@ -47,6 +47,8 @@ fun SettingsScreen(
     onMaxHopsChange: (Int) -> Unit,
     myPhone: String,
     onSavePhone: (String) -> Unit,
+    missingPermissions: Int,
+    onOpenSystemSettings: () -> Unit,
     onConnectPeer: (WifiP2pDevice) -> Unit,
     onRefreshPeers: () -> Unit,
     onLogout: () -> Unit,
@@ -286,6 +288,33 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionTitle("Privacy")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                InfoRow("Data collected", "0% · no account, no server, no tracking", true)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                InfoRow("Chats, calls, contacts", "stored only on this phone", true)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                InfoRow(
+                    "Permissions",
+                    if (missingPermissions == 0) "all granted"
+                    else "$missingPermissions missing · messaging may not work",
+                    missingPermissions == 0,
+                )
+            }
+        }
+        if (missingPermissions > 0) {
+            TextButton(
+                onClick = onOpenSystemSettings,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Open Android settings to allow permissions") }
         }
 
         Spacer(Modifier.height(20.dp))

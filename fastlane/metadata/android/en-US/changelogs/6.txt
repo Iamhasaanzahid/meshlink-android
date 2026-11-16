@@ -1,0 +1,6 @@
+1.5.0
+
+* First-run privacy screen: 0% data collected, no account, no server
+* All permissions explained and requested in one go
+* Privacy card in Settings with local-only storage info
+* Android 13+ no longer needs location permission

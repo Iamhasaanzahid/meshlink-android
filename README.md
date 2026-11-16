@@ -80,6 +80,8 @@ Android gates behind that permission. The app does not talk to any server.
 
 ## Status
 
+- `1.5.0` — first-run privacy screen, one-shot permission request, privacy
+  card in Settings, and a documented [privacy policy](PRIVACY.md).
 - `1.4.0` — optional phone number with SMS fallback, so messages reach across
   the country when the radio mesh cannot.
 - `1.3.0` — relay hops setting (1–20 phones), store-and-forward retries,
@@ -97,6 +99,9 @@ generated in the Android Keystore on the device and is never uploaded.
 
 Transport encryption is planned; until then, treat MeshLink like a radio:
 handy when networks are down, not a replacement for a secure messenger.
+
+MeshLink collects no data at all. See [PRIVACY.md](PRIVACY.md) for the full
+permission and storage breakdown.
 
 ## License
 

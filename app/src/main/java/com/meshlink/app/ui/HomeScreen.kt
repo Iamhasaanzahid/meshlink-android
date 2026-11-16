@@ -2,6 +2,7 @@ package com.meshlink.app.ui
 
 import android.Manifest
 import android.content.Intent
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
@@ -58,6 +59,7 @@ import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.CallManager
 import com.meshlink.app.mesh.CallPhase
 import com.meshlink.app.service.MeshService
+import com.meshlink.app.util.PermissionsHelper
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -263,6 +265,17 @@ fun HomeScreen(
                         onSavePhone = {
                             myPhone = it
                             SessionStore.savePhone(context, it)
+                        },
+                        missingPermissions = PermissionsHelper.missing(context).size,
+                        onOpenSystemSettings = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                        Uri.parse("package:" + context.packageName),
+                                    )
+                                )
+                            }
                         },
                         onConnectPeer = { engine?.connectWifiPeer(it) },
                         onRefreshPeers = {

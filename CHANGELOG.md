@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.0 — 2026-11-16
+
+### Added
+- **First-run privacy screen** that explains, in plain language, that MeshLink
+  collects 0% of your data and why Android asks for sensitive permissions.
+  All permissions are requested in one go from that screen.
+- **Privacy card in Settings** showing "0% data collected", local-only storage
+  and the number of missing permissions, with a shortcut to Android settings.
+- `PRIVACY.md` with a permission-by-permission table.
+
+### Changed
+- On Android 13+ the app no longer asks for location; the Nearby devices
+  permission replaces it for Wi-Fi Direct scanning.
+
 ## 1.4.0 — 2026-11-16
 
 ### Added

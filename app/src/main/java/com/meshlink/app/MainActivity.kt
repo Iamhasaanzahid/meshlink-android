@@ -1,8 +1,5 @@
 package com.meshlink.app
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,14 +8,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
 import com.meshlink.app.data.ChatRepository
 import com.meshlink.app.data.SessionStore
 import com.meshlink.app.service.startMeshService
 import com.meshlink.app.service.stopMeshService
 import com.meshlink.app.ui.HomeScreen
 import com.meshlink.app.ui.MeshLinkTheme
+import com.meshlink.app.ui.PrivacyScreen
 import com.meshlink.app.ui.SignupScreen
+import com.meshlink.app.util.PermissionsHelper
 
 class MainActivity : ComponentActivity() {
 
@@ -27,8 +25,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        requestMeshPermissions()
 
         // Local database (chats, messages, calls, contacts).
         ChatRepository.init(this)
@@ -46,19 +42,37 @@ class MainActivity : ComponentActivity() {
                 var displayName by remember {
                     mutableStateOf(SessionStore.displayName(activity))
                 }
+                var privacySeen by remember {
+                    mutableStateOf(SessionStore.privacySeen(activity))
+                }
 
                 val uin = sessionUin
-                if (uin == null) {
-                    SignupScreen(
+                when {
+                    !privacySeen -> PrivacyScreen(
+                        onAllow = {
+                            SessionStore.markPrivacySeen(activity)
+                            privacySeen = true
+                            requestMeshPermissions()
+                        },
+                        onSkip = {
+                            SessionStore.markPrivacySeen(activity)
+                            privacySeen = true
+                        },
+                    )
+
+                    uin == null -> SignupScreen(
                         onSignupSuccess = { newUin, name ->
                             SessionStore.save(activity, newUin, name)
                             startMeshService(activity, newUin)
                             sessionUin = newUin
                             displayName = name
+                            // Permissions are usually granted on the privacy
+                            // screen; ask again here for people who skipped it.
+                            if (!PermissionsHelper.allGranted(activity)) requestMeshPermissions()
                         }
                     )
-                } else {
-                    HomeScreen(
+
+                    else -> HomeScreen(
                         myUin = uin,
                         displayName = displayName,
                         onLogout = {
@@ -91,29 +105,7 @@ class MainActivity : ComponentActivity() {
      *  - Phone / Microphone → calls (SIM dial + Wi-Fi Direct voice)
      */
     private fun requestMeshPermissions() {
-        val wanted = mutableListOf(
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.MODIFY_AUDIO_SETTINGS,
-            Manifest.permission.VIBRATE,
-        )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            wanted += Manifest.permission.BLUETOOTH_SCAN
-            wanted += Manifest.permission.BLUETOOTH_CONNECT
-            wanted += Manifest.permission.BLUETOOTH_ADVERTISE
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            wanted += Manifest.permission.POST_NOTIFICATIONS
-            wanted += Manifest.permission.NEARBY_WIFI_DEVICES
-        }
-
-        val missing = wanted.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
+        val missing = PermissionsHelper.missing(this)
         if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
     }
 }

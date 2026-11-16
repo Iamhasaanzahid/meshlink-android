@@ -13,9 +13,18 @@ object SessionStore {
     private const val KEY_UIN = "uin"
     private const val KEY_NAME = "display_name"
     private const val KEY_PHONE = "phone_number"
+    private const val KEY_PRIVACY = "privacy_seen"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** True once the privacy / permissions explanation has been shown. */
+    fun privacySeen(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_PRIVACY, false)
+
+    fun markPrivacySeen(context: Context) {
+        prefs(context).edit().putBoolean(KEY_PRIVACY, true).apply()
+    }
 
     fun uin(context: Context): String? =
         prefs(context).getString(KEY_UIN, null)?.takeIf { it.isNotBlank() }
