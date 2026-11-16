@@ -1,0 +1,19 @@
+MeshLink is a free messenger and calling app that works without internet.
+
+Messages and calls travel directly between phones over the phone's own radios:
+
+* Wi-Fi Direct (phone-to-phone Wi-Fi, no router)
+* Bluetooth LE
+* Cellular radio (SMS, no data needed)
+
+Multi-hop forwarding lets a message travel from phone to phone when no tower or hotspot is available.
+
+Features:
+
+* WhatsApp-style chat list, conversations, calls, contacts and settings
+* Message delivery status and tap-to-retry
+* Free voice calls over Wi-Fi Direct with ring, accept, mute, speaker and hang up, plus a call log
+* A normal SIM call fallback when the phones are not paired
+* Identity created on the device; no server, no account, no tracking
+
+All chats and call history are stored locally on the phone.

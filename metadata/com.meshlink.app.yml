@@ -1,6 +1,3 @@
-# MeshLink — F-Droid Metadata (Complete & Correct)
-# This file goes into your fork of fdroiddata at: metadata/com.meshlink.app.yml
-
 Categories:
   - Internet
   - Security
@@ -10,46 +7,51 @@ License: GPL-3.0-or-later
 
 AuthorName: MeshLink
 AuthorEmail: mhzcyb@gmail.com
-AuthorWebSite: https://github.com/Iamhasaanzahid/meshlink
+AuthorWebSite: https://github.com/Iamhasaanzahid/meshlink-android
 
-SourceCode: https://github.com/Iamhasaanzahid/meshlink
-IssueTracker: https://github.com/Iamhasaanzahid/meshlink/issues
-Changelog: https://github.com/Iamhasaanzahid/meshlink/blob/HEAD/CHANGELOG.md
+SourceCode: https://github.com/Iamhasaanzahid/meshlink-android
+IssueTracker: https://github.com/Iamhasaanzahid/meshlink-android/issues
+Changelog: https://github.com/Iamhasaanzahid/meshlink-android/blob/HEAD/CHANGELOG.md
 
 AutoName: MeshLink
 
-Summary: Free end-to-end encrypted messenger that works over radio
+Summary: Messenger and calls that work without internet
 Description: |
-  MeshLink is a free, secure, offline-first messenger.
+  MeshLink is a free messenger and calling app that works without internet.
 
-  Sign up with email only. Every device gets an
-  auto-assigned unique ID (UIN).
+  Messages and calls travel directly between phones over the phone's own
+  radios:
 
-  Messages are end-to-end encrypted (X25519 + HKDF-SHA256 + AES-256-GCM) and
-  can travel over three real radios without any internet connection:
-
-  * Cellular radio (SMS)
+  * Wi-Fi Direct (phone-to-phone Wi-Fi, no router)
   * Bluetooth LE
-  * Wi-Fi Direct
+  * Cellular radio (SMS, no data needed)
 
-  Multi-hop TTL forwarding lets a message travel phone to phone.
-  Text, images, voice notes and push-to-talk voice calls are supported.
+  Multi-hop forwarding lets a message travel from phone to phone when no tower
+  or hotspot is available.
+
+  Features:
+
+  * WhatsApp-style chat list, conversations, calls, contacts and settings
+  * Message delivery status and tap-to-retry
+  * Free voice calls over Wi-Fi Direct with ring, accept, mute, speaker and
+    hang up, plus a call log
+  * A normal SIM call fallback when the phones are not paired
+  * Identity created on the device; no server, no account, no tracking
+
+  All chats and call history are stored locally on the phone.
 
 RepoType: git
-Repo: https://github.com/Iamhasaanzahid/meshlink
+Repo: https://github.com/Iamhasaanzahid/meshlink-android
 
 Builds:
-  - versionName: 1.1.0
-    versionCode: 2
-    commit: v1.1.0
-    # gradlew and settings.gradle live in meshlink_android/ — this is the
-    # directory F-Droid runs the build in, and where app/build is generated.
-    subdir: meshlink_android
+  - versionName: 1.2.0
+    versionCode: 3
+    commit: v1.2.0
     output: app/build/outputs/apk/release/*.apk
     gradle:
       - yes
 
 AutoUpdateMode: Version v%v
 UpdateCheckMode: Tags
-CurrentVersion: 1.1.0
-CurrentVersionCode: 2
+CurrentVersion: 1.2.0
+CurrentVersionCode: 3

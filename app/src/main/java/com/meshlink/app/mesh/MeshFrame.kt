@@ -30,6 +30,12 @@ object MeshFrame {
     const val TYPE_DISCOVERY: Byte = 0x03
     const val TYPE_ACK: Byte = 0x04
 
+    /** One part of a long message that does not fit in a single frame. */
+    const val TYPE_SEGMENT: Byte = 0x05
+
+    /** Call signalling (invite / accept / reject / end). */
+    const val TYPE_CALL: Byte = 0x06
+
     const val DEFAULT_TTL = 5
 
     data class Frame(

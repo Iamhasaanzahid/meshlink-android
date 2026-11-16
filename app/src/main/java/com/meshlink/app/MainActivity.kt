@@ -12,9 +12,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.meshlink.app.data.ChatRepository
 import com.meshlink.app.data.SessionStore
 import com.meshlink.app.service.startMeshService
-import com.meshlink.app.ui.ChatScreen
+import com.meshlink.app.service.stopMeshService
+import com.meshlink.app.ui.HomeScreen
 import com.meshlink.app.ui.MeshLinkTheme
 import com.meshlink.app.ui.SignupScreen
 
@@ -28,7 +30,10 @@ class MainActivity : ComponentActivity() {
 
         requestMeshPermissions()
 
-        // Create the hardware-backed identity key once.
+        // Local database (chats, messages, calls, contacts).
+        ChatRepository.init(this)
+
+        // Hardware-backed identity key.
         runCatching { com.meshlink.app.crypto.KeyManager().ensureE2EEKeyPair() }
 
         // Reconnect the mesh on every launch using the saved identity.
@@ -38,24 +43,44 @@ class MainActivity : ComponentActivity() {
         setContent {
             MeshLinkTheme {
                 var sessionUin by remember { mutableStateOf(SessionStore.uin(activity)) }
+                var displayName by remember {
+                    mutableStateOf(SessionStore.displayName(activity))
+                }
 
                 val uin = sessionUin
                 if (uin == null) {
                     SignupScreen(
-                        onSignupSuccess = { newUin, displayName ->
-                            SessionStore.save(activity, newUin, displayName)
+                        onSignupSuccess = { newUin, name ->
+                            SessionStore.save(activity, newUin, name)
                             startMeshService(activity, newUin)
                             sessionUin = newUin
+                            displayName = name
                         }
                     )
                 } else {
-                    ChatScreen(
+                    HomeScreen(
                         myUin = uin,
-                        onLogout = { sessionUin = null }
+                        displayName = displayName,
+                        onLogout = {
+                            stopMeshService(activity)
+                            SessionStore.clear(activity)
+                            sessionUin = null
+                            displayName = ""
+                        },
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.meshlink.app.service.AppForeground.active = true
+    }
+
+    override fun onPause() {
+        com.meshlink.app.service.AppForeground.active = false
+        super.onPause()
     }
 
     /**
@@ -73,6 +98,7 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.CALL_PHONE,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.MODIFY_AUDIO_SETTINGS,
+            Manifest.permission.VIBRATE,
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

@@ -3,6 +3,7 @@ package com.meshlink.app.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -11,9 +12,19 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.meshlink.app.MainActivity
 import com.meshlink.app.R
+import com.meshlink.app.data.Chat
+import com.meshlink.app.data.ChatRepository
+import com.meshlink.app.data.Message
 import com.meshlink.app.data.SessionStore
+import com.meshlink.app.mesh.CallManager
+import com.meshlink.app.mesh.CallUiState
 import com.meshlink.app.mesh.MeshEngine
-import com.meshlink.app.mesh.TransportType
+
+/** Tracks whether an activity is visible, so we only notify in the background. */
+object AppForeground {
+    @Volatile
+    var active: Boolean = false
+}
 
 /**
  * Foreground service that keeps every radio alive while the app is in the
@@ -22,15 +33,17 @@ import com.meshlink.app.mesh.TransportType
 class MeshService : Service() {
 
     companion object {
-        private const val CHANNEL_ID = "meshlink_mesh"
+        private const val CHANNEL_MESH = "meshlink_mesh"
+        private const val CHANNEL_MESSAGES = "meshlink_messages"
+        private const val CHANNEL_CALLS = "meshlink_calls"
+
         private const val NOTIFICATION_ID = 1001
+        private const val MESSAGE_NOTIFICATION_ID = 1002
+        private const val CALL_NOTIFICATION_ID = 1003
 
         const val ACTION_START = "com.meshlink.app.START_MESH"
         const val ACTION_STOP = "com.meshlink.app.STOP_MESH"
-        const val ACTION_SEND_RADIO = "com.meshlink.app.SEND_RADIO"
         const val EXTRA_UIN = "uin"
-        const val EXTRA_DESTINATION = "destination"
-        const val EXTRA_TEXT = "text"
 
         @Volatile
         var engine: MeshEngine? = null
@@ -39,11 +52,24 @@ class MeshService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        createChannels()
+        ChatRepository.init(this)
+
         val mesh = MeshEngine(applicationContext)
         engine = mesh
-        // Restore the saved identity so relay addressing survives a restart.
         SessionStore.uin(this)?.let { mesh.configure(it) }
+
+        mesh.onMessageForMe = { from, id, body, senderName, transport ->
+            ChatRepository.onIncoming(from, id, body, transport.name, senderName)
+        }
+        mesh.onAckFor = { id -> ChatRepository.onDelivered(id) }
+
+        CallManager.attach(this, mesh)
+        CallManager.onIncomingCall = { state -> notifyIncomingCall(state) }
+        CallManager.onCallEnded = { cancelCallNotification() }
+
+        ChatRepository.onNewMessage = { message, chat -> notifyMessage(message, chat) }
+
         mesh.start()
     }
 
@@ -51,16 +77,10 @@ class MeshService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 engine?.stop()
+                CallManager.detach()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
-            }
-            ACTION_SEND_RADIO -> {
-                val destination = intent.getStringExtra(EXTRA_DESTINATION)
-                val text = intent.getStringExtra(EXTRA_TEXT)
-                if (!destination.isNullOrBlank() && text != null) {
-                    engine?.sendText(destination, text, TransportType.RADIO_SMS)
-                }
             }
             else -> {
                 intent?.getStringExtra(EXTRA_UIN)?.let { engine?.configure(it) }
@@ -79,28 +99,48 @@ class MeshService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
+    // -------------------------------------------------------------- channels
+
+    private fun createChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_MESH,
                 getString(R.string.mesh_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
                 description = getString(R.string.mesh_channel_description)
                 setShowBadge(false)
             }
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
-        }
+        )
+
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_MESSAGES,
+                "Messages",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { description = "New messages arriving over the radio mesh" }
+        )
+
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_CALLS,
+                "Calls",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { description = "Incoming MeshLink calls" }
+        )
     }
 
     private fun buildNotification(): Notification {
-        val openApp = android.app.PendingIntent.getActivity(
+        val openApp = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_MESH)
             .setContentTitle(getString(R.string.mesh_notification_title))
             .setContentText(getString(R.string.mesh_notification_text))
             .setSmallIcon(R.drawable.ic_meshlink_notification)
@@ -108,6 +148,51 @@ class MeshService : Service() {
             .setContentIntent(openApp)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun notifyMessage(message: Message, chat: Chat) {
+        if (AppForeground.active) return
+        val open = PendingIntent.getActivity(
+            this,
+            10,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_MESSAGES)
+            .setContentTitle(chat.name.ifBlank { chat.peer })
+            .setContentText(message.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message.body))
+            .setSmallIcon(R.drawable.ic_meshlink_notification)
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        getSystemService(NotificationManager::class.java)
+            ?.notify(MESSAGE_NOTIFICATION_ID, notification)
+    }
+
+    private fun notifyIncomingCall(state: CallUiState) {
+        val open = PendingIntent.getActivity(
+            this,
+            11,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_CALLS)
+            .setContentTitle("Incoming MeshLink call")
+            .setContentText("${state.name.ifBlank { state.peer }} is calling over Wi-Fi Direct")
+            .setSmallIcon(R.drawable.ic_meshlink_notification)
+            .setOngoing(true)
+            .setContentIntent(open)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .build()
+        getSystemService(NotificationManager::class.java)
+            ?.notify(CALL_NOTIFICATION_ID, notification)
+    }
+
+    private fun cancelCallNotification() {
+        getSystemService(NotificationManager::class.java)?.cancel(CALL_NOTIFICATION_ID)
     }
 }
 
@@ -122,4 +207,12 @@ fun startMeshService(context: Context, uin: String?) {
     } else {
         context.startService(intent)
     }
+}
+
+/** Stops the mesh (used when the user logs out). */
+fun stopMeshService(context: Context) {
+    val intent = Intent(context, MeshService::class.java).apply {
+        action = MeshService.ACTION_STOP
+    }
+    runCatching { context.startService(intent) }
 }

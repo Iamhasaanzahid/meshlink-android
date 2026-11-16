@@ -1,83 +1,92 @@
-# MeshLink (Android)
+# MeshLink
 
-Free, secure, offline-first messenger. Sign up with **email only** — no phone
-number required. Every device gets an auto-assigned **UIN** (e.g. `+92-MZ-123456`).
+**Free messaging and calling that works without internet.**
 
-Messages are **end-to-end encrypted** (X25519 ECDH + HKDF-SHA256 + AES-256-GCM)
-and can travel over three real radios with no internet:
+MeshLink is an Android messenger that talks to other phones directly over the
+phone's own radios — no servers, no accounts, no data plan and no Wi-Fi router.
 
-| Transport | Radio | Needs | Typical range |
-|-----------|-------|-------|---------------|
-| **Radio (SMS)** | Cellular modem (GSM/CDMA/LTE/5G) | SIM + operator signal | city / nationwide |
-| **Bluetooth LE** | 2.4 GHz BLE | nothing | 10–50 m per hop |
-| **Wi-Fi Direct** | 2.4/5 GHz Wi-Fi | nothing | 50–200 m per hop |
+| Radio | Needs | Typical range |
+|-------|-------|---------------|
+| **Wi-Fi Direct** | nothing (phone-to-phone Wi-Fi) | 50–200 m per hop |
+| **Bluetooth LE** | nothing | 10–50 m per hop |
+| **Cellular radio (SMS)** | a SIM with signal | city / nationwide |
 
-Multi-hop TTL forwarding (default 5 hops) extends the local mesh.
+Messages hop phone → phone → phone (5 hops by default), so a chat can cross a
+crowd, a building or a village where the network is down.
 
-## What the app does (v1.1)
+## What's inside
 
-- **Signup** — email only, or a fully offline `OFF-XXXXXX` ID when the server
-  is unreachable. The UIN is remembered on the device.
-- **Chat** — message any UIN (Bluetooth/Wi-Fi mesh) or phone number (SMS radio).
-  Pick `Auto`, `SIM`, `Bluetooth` or `Wi-Fi` per message; Auto picks the right
-  radio for the destination. Incoming messages appear instantly.
-- **Call** — call a phone number over the cellular voice channel, or join a
-  free **push-to-talk voice group over Wi-Fi Direct** (hold to talk).
-- **Radios** — live status for all three radios, nearby Wi-Fi Direct peers with
-  one-tap connect, current mesh node id.
+- **WhatsApp-style interface** — chat list, per-chat conversations, calls tab,
+  contacts and settings.
+- **Chats** — bubbles, timestamps, date separators, unread badges, message
+  status (queued / sent / delivered) and tap-to-retry when a radio can't reach
+  the other phone.
+- **Calls** — ring, accept, mute, speaker and hang up, with a live timer.
+  Voice is streamed directly between the two phones over Wi-Fi Direct.
+  If the two phones are not in a Wi-Fi Direct group, the app offers a normal
+  SIM call instead.
+- **Call log** — incoming, outgoing and missed calls with duration.
+- **Contacts** — saved on the device, one tap to chat or call.
+- **Radio status** — live state of all three radios and one-tap pairing with
+  nearby Wi-Fi Direct phones.
+- **Fully offline identity** — the ID is generated on the phone. Nothing is
+  uploaded anywhere.
 
-Every radio runs at the same time in a foreground service, so messaging keeps
-working while the app is in the background and after a reboot.
+Everything is stored in a local SQLite database on the phone. There is no
+backend, no analytics and no internet permission requirement for messaging or
+calling.
 
-## Build without Android Studio
+## Screens
+
+`Chats` · `Calls` · `Contacts` · `Settings` — four tabs, Material 3, purple
+theme, dark-mode aware.
+
+## Build
+
+Requirements: JDK 17+, Android SDK 34.
 
 ```bash
-# one-time SDK install (command line tools)
 export ANDROID_HOME=$HOME/Android/Sdk
-sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-cd meshlink_android
 echo "sdk.dir=$ANDROID_HOME" > local.properties
-./gradlew assembleDebug
+
+./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease        # unsigned release APK (F-Droid style)
 ```
 
-The debug APK lands in `app/build/outputs/apk/debug/app-debug.apk`.
+Release signing is opt-in and controlled by environment variables
+(`KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`). Without
+them the release APK is unsigned, exactly what F-Droid expects.
 
-> A plain FM radio receiver cannot transmit data, so the app uses the cellular
-> modem — the phone radio that can both send and receive — for long-range radio
-> messaging. This works even when mobile data and Wi-Fi are off.
+## Permissions
 
-### Addressing over the cellular radio
+| Permission | Why |
+|------------|-----|
+| `SEND_SMS` / `RECEIVE_SMS` | messaging over the cellular radio |
+| `CALL_PHONE` | optional SIM call fallback |
+| `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` / `VIBRATE` | in-app voice calls and ringtone |
+| `BLUETOOTH_*` | Bluetooth LE mesh |
+| `ACCESS_FINE_LOCATION`, `NEARBY_WIFI_DEVICES` | Android requires these to scan for Wi-Fi Direct peers |
+| `FOREGROUND_SERVICE*`, `POST_NOTIFICATIONS` | keeps the radios alive in the background |
 
-Your **UIN is your permanent identity**. To message someone over the cellular
-radio, the two of you exchange your **radio number** (the SIM number) once, just
-like sharing a contact. After that, MeshLink can deliver encrypted messages over
-SMS with no internet. Destinations that look like a phone number
-(`+923001234567`) automatically go over the cellular radio; UIN destinations use
-Bluetooth LE / Wi-Fi Direct / the internet relay.
+`INTERNET` is declared only because Wi-Fi Direct sockets are TCP sockets, which
+Android gates behind that permission. The app does not talk to any server.
 
-## Build (free, no Android SDK needed locally)
+## Status
 
-```bash
-# Debug APK
-./gradlew assembleDebug
+- `1.2.0` — WhatsApp-style UI, persistent chats, working Wi-Fi Direct calls,
+  delivery receipts, call log, contacts, fully offline signup.
+- `1.1.0` — first public build with chat, push-to-talk voice and radio status.
 
-# Release APK/AAB pointing at your own server
-./gradlew assembleRelease -PmeshlinkApiUrl="https://your-host.onrender.com"
-```
+## Security
 
-Or push to GitHub and use the included
-`.github/workflows/android-build.yml` (free for public repos).
+MeshLink 1.2.0 does **not** encrypt message or call payloads in transit yet.
+Messages can travel over SMS, Bluetooth LE and Wi-Fi Direct, and anyone with
+the right radio equipment in range could read them. The identity key pair is
+generated in the Android Keystore on the device and is never uploaded.
 
-## Backend
-
-The optional internet relay lives in `../meshlink_app` (FastAPI + SQLite).
-Offline radio/BLE/Wi-Fi Direct messaging works without it.
+Transport encryption is planned; until then, treat MeshLink like a radio:
+handy when networks are down, not a replacement for a secure messenger.
 
 ## License
 
-GPL-3.0-or-later. See `LICENSE`.
-
-## F-Droid
-
-See `../meshlink_android/FREE_PUBLISH.md` and `metadata/com.meshlink.app.yml`.
+GPL-3.0-or-later. See [LICENSE](LICENSE).

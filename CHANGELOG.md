@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0 — 2026-11-15
+
+### Added
+- **WhatsApp-style interface**: chat list with avatars, last message, time and
+  unread badges; per-conversation screens with bubbles, date separators and
+  read-style status; Calls, Contacts and Settings tabs.
+- **Persistent storage**: chats, messages, call history and contacts are kept
+  in a local SQLite database and survive app restarts.
+- **Real in-app calls**: ring, accept, decline, mute, speaker and hang up with
+  a live timer. Audio is streamed phone-to-phone over Wi-Fi Direct at 8 kHz.
+- **Call log** with incoming / outgoing / missed entries and duration.
+- **Delivery receipts**: the receiving phone acknowledges each message, so the
+  sender sees single or double ticks. Failed messages can be retried by tap.
+- **Long messages** are split into radio-sized frames and reassembled.
+- **Contacts** with one-tap chat and call.
+- **Background notifications** for new messages and incoming calls.
+- **Fully offline identity**: the ID is generated on the device, no server.
+
+### Changed
+- The app is now **offline-only by design**. The internet relay was removed;
+  messages use Wi-Fi Direct, then Bluetooth LE, then SMS.
+- Signup no longer needs email or a network connection.
+- New home with four tabs (Chats / Calls / Contacts / Settings).
+
+### Fixed
+- Messages longer than one frame are no longer dropped.
+- Duplicate frames are ignored, so relays do not create duplicate chats.
+
 ## 1.1.0 — 2026-11-14
 
 ### Added

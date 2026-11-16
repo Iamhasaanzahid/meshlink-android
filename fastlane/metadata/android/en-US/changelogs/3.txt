@@ -1,0 +1,8 @@
+1.2.0
+
+* WhatsApp-style interface: chat list, conversations, calls, contacts and settings
+* Persistent chats, messages, call history and contacts
+* Real in-app calls over Wi-Fi Direct with ring, mute, speaker and hang up
+* Delivery receipts with single and double ticks, tap-to-retry
+* Long messages are split into radio-sized frames and reassembled
+* Fully offline identity, no server and no account

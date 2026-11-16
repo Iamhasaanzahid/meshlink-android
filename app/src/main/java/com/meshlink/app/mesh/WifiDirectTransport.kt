@@ -22,8 +22,8 @@ import kotlin.concurrent.thread
 /**
  * WI-FI DIRECT TRANSPORT — 2.4/5 GHz radio, no internet, no router.
  *
- * Forms an ad-hoc Wi-Fi Direct group between phones and exchanges encrypted
- * mesh frames over persistent TCP sockets. Works completely offline and has
+ * Forms an ad-hoc Wi-Fi Direct group between phones and exchanges mesh
+ * frames over persistent TCP sockets. Works completely offline and has
  * longer range + higher throughput than BLE (good for images and voice).
  */
 @SuppressLint("MissingPermission")

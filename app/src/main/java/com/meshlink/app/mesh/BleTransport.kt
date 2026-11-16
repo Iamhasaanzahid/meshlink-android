@@ -28,7 +28,7 @@ import java.util.UUID
  *
  * Every modern Android phone has a BLE radio. This transport advertises a
  * MeshLink GATT service, scans for nearby MeshLink peers, and exchanges
- * encrypted mesh frames over a writable/notifying characteristic.
+ * mesh frames over a writable/notifying characteristic.
  *
  * Range: ~10–50 m per hop. Combined with multi-hop TTL forwarding this gives
  * a local mesh that works completely offline.

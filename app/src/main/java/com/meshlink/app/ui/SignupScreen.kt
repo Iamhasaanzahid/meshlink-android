@@ -16,12 +16,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.meshlink.app.api.BackendApi
 import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.UUID
+import java.security.SecureRandom
 
 private val Purple = Color(0xFF6750A4)
 private val PurpleLight = Color(0xFFEADDFF)
@@ -31,14 +27,11 @@ private val Ink = Color(0xFF1D1B20)
 
 @Composable
 fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
-    val scope = rememberCoroutineScope()
-
     var email by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var generatedUin by remember { mutableStateOf("") }
     var offlineUin by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
 
     val gradient = Brush.verticalGradient(
         listOf(Purple, Color(0xFF9C88FF), PurpleLight, Color(0xFFFEF7FF))
@@ -64,7 +57,7 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it; error = "" },
-                label = { Text("Email") },
+                label = { Text("Email (optional)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -115,27 +108,13 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
             Button(
                 onClick = {
                     error = ""
-                    isLoading = true
-                    scope.launch {
-                        val uin = withContext(Dispatchers.IO) {
-                            runCatching {
-                                BackendApi().signupUin(email.trim(), displayName.trim())
-                            }.getOrNull()
-                        }
-                        isLoading = false
-                        if (uin != null) {
-                            generatedUin = uin
-                            offlineUin = false
-                        } else {
-                            // No internet? The app must still work — create a local
-                            // identity so radio/BLE/Wi-Fi messaging is available.
-                            generatedUin = "OFF-" + UUID.randomUUID().toString()
-                                .replace("-", "").take(6).uppercase()
-                            offlineUin = true
-                        }
-                    }
+                    // The identity is created on the phone itself — no server,
+                    // no internet, no account. Works on a plane, in a tunnel,
+                    // or when the network is down.
+                    generatedUin = "OFF-" + randomId()
+                    offlineUin = true
                 },
-                enabled = !isLoading && email.isNotBlank() && displayName.isNotBlank(),
+                enabled = displayName.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
@@ -145,15 +124,7 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
                     contentColor = Color.White,
                 ),
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text("Create Free Account", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
+                Text("Create Offline Identity", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
 
             if (generatedUin.isNotEmpty()) {
@@ -173,7 +144,7 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             if (offlineUin)
-                                "Offline ID created — server unreachable, radios still work"
+                                "Created on this phone — no server, no internet needed"
                             else
                                 "Share this with friends to connect securely",
                             fontSize = 12.sp,
@@ -201,8 +172,17 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
             RadioStatusCard()
 
             Spacer(Modifier.height(14.dp))
-            Text("v1.1.0 · Free Forever", fontSize = 12.sp, color = Color(0xFF9E9A9F))
+            Text("v1.2.0 · Free Forever", fontSize = 12.sp, color = Color(0xFF9E9A9F))
         }
+    }
+}
+
+/** 6-character ID generated on the device (no server round-trip). */
+private fun randomId(): String {
+    val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    val random = SecureRandom()
+    return buildString {
+        repeat(6) { append(alphabet[random.nextInt(alphabet.length)]) }
     }
 }
 

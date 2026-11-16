@@ -8,8 +8,8 @@ import java.security.spec.ECGenParameterSpec
 /**
  * Hardware-backed identity key stored in the Android Keystore.
  *
- * The private key never leaves the keystore; only the public key is shared
- * with the backend / peers for end-to-end encryption.
+ * The private key never leaves the keystore. The key pair is generated for
+ * device identity and future message signing; it is not transmitted.
  */
 class KeyManager {
 

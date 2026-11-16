@@ -16,9 +16,9 @@ import java.security.SecureRandom
  * no mobile data, no internet — only a SIM with SMS capability (or any
  * operator signal). Works when everything else is down.
  *
- * Payloads are already E2EE-encrypted by the caller (AES-256-GCM), then
- * URL-safe Base64 encoded and split into SMS-sized chunks. The receiver
- * reassembles and hands the decrypted-ready frame back to the mesh router.
+ * Payloads are URL-safe Base64 encoded and split into SMS-sized chunks.
+ * The receiver reassembles the chunks and hands the complete frame back to
+ * the mesh router.
  *
  * Wire format (one SMS per chunk):
  *
