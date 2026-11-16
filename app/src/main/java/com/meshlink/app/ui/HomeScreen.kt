@@ -86,6 +86,7 @@ fun HomeScreen(
     var contactAddress by remember { mutableStateOf("") }
     var simFallback by remember { mutableStateOf<Pair<String, String>?>(null) }
     var searching by remember { mutableStateOf(false) }
+    var onlineCallOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
@@ -276,6 +277,7 @@ fun HomeScreen(
                             openPeer = peer
                             openName = name
                         },
+                        onOnlineCall = { onlineCallOpen = true },
                     )
                     2 -> ContactsScreen(
                         contacts = contacts,
@@ -393,6 +395,10 @@ fun HomeScreen(
             },
             dismissButton = { TextButton(onClick = { simFallback = null }) { Text("Cancel") } },
         )
+    }
+
+    if (onlineCallOpen) {
+        OnlineCallScreen(onClose = { onlineCallOpen = false })
     }
 }
 

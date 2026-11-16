@@ -16,6 +16,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,26 +40,88 @@ fun CallsScreen(
     calls: List<CallLog>,
     onCall: (peer: String, name: String) -> Unit,
     onOpenChat: (peer: String, name: String) -> Unit,
+    onOnlineCall: () -> Unit,
 ) {
-    if (calls.isEmpty()) {
-        EmptyState(
-            title = "No calls yet",
-            body = "Call another MeshLink phone over Wi-Fi Direct — free, " +
-                "phone to phone, without internet. Or use a normal SIM call.",
-        )
-        return
-    }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
         contentPadding = PaddingValues(vertical = 4.dp),
     ) {
+        item(key = "online-call") {
+            OnlineCallCard(onOnlineCall)
+        }
+        if (calls.isEmpty()) {
+            item(key = "empty") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("No calls yet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Call another MeshLink phone over Wi-Fi Direct — free, " +
+                            "phone to phone, without internet. Or use a normal SIM call.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+            }
+        }
         items(calls, key = { it.id }) { call ->
             CallRow(call, onCall, onOpenChat)
             Divider(
                 modifier = Modifier.padding(start = 78.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OnlineCallCard(onOnlineCall: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+        onClick = onOnlineCall,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Public,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Online call (worldwide)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    "Direct, encrypted call over the internet — works across countries",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                )
+            }
+            Icon(
+                Icons.Filled.Call,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }

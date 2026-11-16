@@ -19,6 +19,7 @@ import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.CallManager
 import com.meshlink.app.mesh.CallUiState
 import com.meshlink.app.mesh.MeshEngine
+import com.meshlink.app.mesh.OnlineCallManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,6 +78,7 @@ class MeshService : Service() {
         mesh.onAckFor = { id -> ChatRepository.onDelivered(id) }
 
         CallManager.attach(this, mesh)
+        OnlineCallManager.attach(this)
         CallManager.onIncomingCall = { state -> notifyIncomingCall(state) }
         CallManager.onCallEnded = { cancelCallNotification() }
 

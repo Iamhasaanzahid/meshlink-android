@@ -1,0 +1,6 @@
+1.7.0
+
+* New: online mode — worldwide encrypted calls over the internet
+* No server: two phones exchange a code and call each other directly
+* Mute, speakerphone and call timer
+* Microphone permission is asked only when you start a call

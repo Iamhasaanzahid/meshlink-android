@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.7.0 — 2026-11-16
+
+### Added
+- **Online mode: worldwide voice calls over the internet, with no server.**
+  Calls → "Online call (worldwide)": the caller creates a call code, the other
+  person pastes it, sends back a reply code, and the call connects directly
+  between the two phones. Audio is encrypted end to end with DTLS-SRTP, which
+  WebRTC enables on every call; no server sees or relays the audio.
+- WebRTC (`io.github.webrtc-sdk:android`) with public STUN servers for NAT
+  traversal, echo cancellation, noise suppression and automatic gain control.
+- Mute, speakerphone and call timer; microphone permission is requested only
+  when a call is started.
+- `CallCodes` with unit tests, so a broken pairing code cannot slip through.
+
+### Notes
+- Some very strict mobile networks (CGNAT) block direct peer-to-peer audio.
+  The app says so clearly instead of failing silently; switching one phone to
+  Wi-Fi or a hotspot usually works. No TURN relay is included (it is not free
+  at scale).
+- APK size grows to about 46 MB because it now contains the WebRTC libraries.
+
 ## 1.6.0 — 2026-11-16
 
 ### Added

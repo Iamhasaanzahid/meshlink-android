@@ -37,6 +37,18 @@ deletes the whole database.
 - no reading your files, photos or contact list
 - no uploading of chats, calls or contacts
 
+## Online calls
+
+The online call mode is the only feature that uses the internet, and only when
+you open it and exchange a call code. The two phones connect directly to each
+other; MeshLink has no call server and no TURN relay. Audio is encrypted with
+DTLS-SRTP (part of WebRTC) and is never recorded. Public STUN servers see your
+public IP address while a call is being set up, exactly like any WebRTC app;
+they do not see the audio or your messages.
+
+The call code contains connection details (including IP addresses). Share it
+only with the person you are calling.
+
 ## Your phone number is not used by the free radios
 
 Bluetooth LE, Wi-Fi Direct and Wi-Fi LAN send only your MeshLink ID

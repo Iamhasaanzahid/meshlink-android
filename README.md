@@ -103,6 +103,18 @@ handy when networks are down, not a replacement for a secure messenger.
 MeshLink collects no data at all. See [PRIVACY.md](PRIVACY.md) for the full
 permission and storage breakdown.
 
+## Online calls (internet)
+
+Calls → **Online call (worldwide)**. There is no call server: one person
+creates a code, the other pastes it and sends a reply code back, and the two
+phones connect directly. Audio is encrypted with DTLS-SRTP, part of WebRTC,
+so the media never passes through any MeshLink machine. Public STUN servers are
+used only to discover the public address.
+
+If a network is too strict for direct peer-to-peer audio, the app says so;
+switching one phone to Wi-Fi or a hotspot usually fixes it. There is no TURN
+relay because running one is not free at scale.
+
 SMS fallback is off by default. Bluetooth, Wi-Fi Direct and Wi-Fi LAN messages
 never include your SIM number; they carry only your `OFF-XXXXXX` ID.
 
