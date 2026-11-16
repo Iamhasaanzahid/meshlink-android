@@ -17,6 +17,9 @@ enum class TransportType {
     /** Wi-Fi Direct — phone-to-phone Wi-Fi, no router and no internet. */
     WIFI_DIRECT,
 
+    /** Wi-Fi LAN — both phones on the same router or hotspot, no internet. */
+    WIFI_LAN,
+
     /** Try every available radio. */
     AUTO,
 }
@@ -52,6 +55,10 @@ class MeshEngine(private val context: Context) {
     var localNodeId: Int = 0
         private set
 
+    /** This phone's UIN, carried inside frames so replies reach the right node. */
+    @Volatile
+    private var localUin: String = ""
+
     /** Every node id that addresses this device (UIN, and 0 = broadcast). */
     @Volatile
     private var localNodeIds: Set<Int> = emptySet()
@@ -69,6 +76,7 @@ class MeshEngine(private val context: Context) {
 
     private val ble = BleTransport(context)
     private val wifi = WifiDirectTransport(context)
+    private val lan = LanTransport(context)
 
     private val seen = LinkedHashMap<String, Long>()
     private val seenLock = Any()
@@ -110,10 +118,13 @@ class MeshEngine(private val context: Context) {
         private set
     var wifiActive: Boolean = false
         private set
+    var lanActive: Boolean = false
+        private set
 
     // ------------------------------------------------------------------ setup
 
     fun configure(localUin: String) {
+        this.localUin = localUin
         localNodeId = MeshFrame.nodeId16(localUin)
         localNodeIds = setOf(localNodeId)
     }
@@ -138,14 +149,27 @@ class MeshEngine(private val context: Context) {
         }
         wifi.onFrame = { addr, bytes -> handleIncoming(addr, TransportType.WIFI_DIRECT, bytes) }
 
-        Log.i(TAG, "Mesh started (BLE=$bleActive, Wi-FiDirect=$wifiActive, SMS=true)")
+        if (lan.isSupported) {
+            runCatching { lan.start() }
+                .onSuccess { lanActive = true }
+                .onFailure { Log.w(TAG, "Wi-Fi LAN start failed", it) }
+        }
+        lan.onFrame = { addr, bytes -> handleIncoming(addr, TransportType.WIFI_LAN, bytes) }
+
+        Log.i(
+            TAG,
+            "Mesh started (BLE=$bleActive, Wi-FiDirect=$wifiActive, Wi-FiLAN=$lanActive, " +
+                "SMS=${MeshSettings.smsFallback(context)})",
+        )
     }
 
     fun stop() {
         ble.stop()
         wifi.stop()
+        lan.stop()
         bleActive = false
         wifiActive = false
+        lanActive = false
     }
 
     // ---------------------------------------------------------------- sending
@@ -186,6 +210,7 @@ class MeshEngine(private val context: Context) {
             TransportType.RADIO_SMS -> RadioTransport.sendFrame(context, destination, frame)
             TransportType.BLUETOOTH_LE -> ble.send(null, frame) > 0
             TransportType.WIFI_DIRECT -> wifi.send(frame)
+            TransportType.WIFI_LAN -> lan.send(frame)
             TransportType.AUTO -> sendFrames(destination, listOf(frame))
         }
 
@@ -209,12 +234,22 @@ class MeshEngine(private val context: Context) {
             for (f in frames) ok = wifi.send(f) && ok
             if (ok) return true
         }
+        if (lanActive) {
+            var ok = true
+            for (f in frames) ok = lan.send(f) && ok
+            if (ok) return true
+        }
         if (bleActive) {
             var ok = true
             for (f in frames) ok = ble.send(null, f) > 0 && ok
             if (ok) return true
         }
-        if (allowSms && smsTo != null && RadioTransport.isAvailable(context)) {
+        // SMS is strictly opt-in: it uses the SIM and may cost money, so the
+        // user has to switch it on in Settings and grant the SMS permission.
+        if (allowSms && smsTo != null &&
+            MeshSettings.smsFallback(context) &&
+            RadioTransport.isAvailable(context)
+        ) {
             var ok = true
             for (f in frames) ok = RadioTransport.sendFrame(context, smsTo, f) && ok
             if (ok) return true
@@ -233,6 +268,7 @@ class MeshEngine(private val context: Context) {
             .put("i", messageId)
             .put("b", body)
             .put("n", senderName)
+            .put("u", localUin)
             .put("t", System.currentTimeMillis())
             .apply { if (myPhone.isNotBlank()) put("p", myPhone) }
             .toString()
@@ -284,6 +320,7 @@ class MeshEngine(private val context: Context) {
             .put("a", action)
             .put("id", callId)
             .put("n", name)
+            .put("u", localUin)
             .toString()
             .toByteArray(Charsets.UTF_8)
             .let { if (it.size > MeshFrame.MAX_PAYLOAD) it.copyOf(MeshFrame.MAX_PAYLOAD) else it }
@@ -347,6 +384,7 @@ class MeshEngine(private val context: Context) {
             when (transport) {
                 TransportType.BLUETOOTH_LE -> ble.send(null, relayed)
                 TransportType.WIFI_DIRECT -> wifi.send(relayed)
+                TransportType.WIFI_LAN -> lan.send(relayed)
                 else -> Unit // SMS is point-to-point
             }
         }
@@ -394,18 +432,22 @@ class MeshEngine(private val context: Context) {
         var body = raw
         var name = ""
         var phone = ""
+        var sender = from
         runCatching {
             val json = JSONObject(raw)
             id = json.optString("i", "")
             body = json.optString("b", raw)
             name = json.optString("n", "")
             phone = json.optString("p", "")
+            // Prefer the sender's UIN over the raw MAC/IP so the reply goes
+            // back through the mesh to that specific phone.
+            json.optString("u", "").takeIf { it.isNotBlank() }?.let { sender = it }
         }
 
         val messageId = id?.takeIf { it.isNotEmpty() } ?: newId(payload)
         if (body.isEmpty()) return
 
-        onMessageForMe?.invoke(from, messageId, body, name, transport, phone)
+        onMessageForMe?.invoke(sender, messageId, body, name, transport, phone)
         // Confirm receipt so the sender sees double ticks.
         sendAck(from, messageId)
     }
@@ -430,8 +472,9 @@ class MeshEngine(private val context: Context) {
             val action = json.optString("a", "")
             val callId = json.optString("id", "")
             val name = json.optString("n", "")
+            val sender = json.optString("u", "").takeIf { it.isNotBlank() } ?: from
             if (action.isNotEmpty() && callId.isNotEmpty()) {
-                onControl?.invoke(from, action, callId, name)
+                onControl?.invoke(sender, action, callId, name)
             }
         }
     }
@@ -458,6 +501,9 @@ class MeshEngine(private val context: Context) {
         "radioSmsAvailable" to RadioTransport.isAvailable(context),
         "bluetoothLeActive" to bleActive,
         "wifiDirectActive" to wifiActive,
+        "wifiLanActive" to lanActive,
+        "wifiLanPeers" to lan.peerCount(),
+        "smsFallbackEnabled" to MeshSettings.smsFallback(context),
         "blePeers" to ble.connectedPeerCount,
         "wifiGroup" to wifi.hasGroup,
         "wifiGroupOwner" to wifi.isGroupOwner,

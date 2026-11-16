@@ -11,9 +11,7 @@
     <string name="your_unique_id">Your Unique ID</string>
     <string name="share_uin_hint">Share this with friends to connect securely</string>
     <string name="feature_no_phone">No phone number needed</string>
-    <string name="feature_e2ee">End-to-End Encrypted</string>
     <string name="feature_offline">Works offline via radio mesh</string>
-    <string name="version_label">v1.0.0 · Free Forever</string>
 
     <string name="mesh_channel_name">MeshLink radio mesh</string>
     <string name="mesh_channel_description">Keeps Bluetooth, Wi-Fi Direct and radio (SMS) mesh active</string>

@@ -20,10 +20,11 @@ deletes the whole database.
 
 | Permission | Purpose |
 |---|---|
-| Send / receive SMS | delivers a message over your SIM when no MeshLink phone is in range |
+| Send / receive SMS | **optional, off by default**: delivers a message over your SIM only after you enable SMS fallback in Settings |
 | Microphone | live audio during a MeshLink call only; nothing is recorded |
 | Phone | places a normal SIM call when a MeshLink call cannot connect |
 | Bluetooth scan / connect / advertise | finds and connects nearby MeshLink phones |
+| Wi-Fi / network state | sends messages over the local Wi-Fi network, never over the internet |
 | Nearby devices (Android 13+) / Location (Android 12 and older) | required by Android to scan for Wi-Fi Direct peers; the location itself is never read or stored |
 | Notifications | shows incoming messages and calls |
 | Vibration | rings for incoming calls |
@@ -35,6 +36,31 @@ deletes the whole database.
 - no advertising, tracking or analytics
 - no reading your files, photos or contact list
 - no uploading of chats, calls or contacts
+
+## Your phone number is not used by the free radios
+
+Bluetooth LE, Wi-Fi Direct and Wi-Fi LAN send only your MeshLink ID
+(`OFF-XXXXXX`). Your SIM number is **not** included in those messages, so two
+phones on the same Wi-Fi or within Bluetooth range can talk without either
+side knowing the other's number. A number is shared only if you type one into
+Settings.
+
+## About Android's SMS warning
+
+Android shows *"SMS may cost you money"* whenever an app asks for the SMS
+permission. That warning is correct — an SMS is charged at your operator's
+normal rate. MeshLink therefore:
+
+- keeps SMS **off by default** and asks for the permission only when you flip
+  the switch in Settings,
+- never uses SMS for automatic retries,
+- works fully over Bluetooth, Wi-Fi Direct and Wi-Fi LAN without the SMS
+  permission at all.
+
+There is no way to send an SMS without the network knowing the SIM it came
+from, and no way to send free unlimited messages over a mobile network
+without either mobile data or a paid SMS bundle. MeshLink does not pretend
+otherwise.
 
 ## Relaying
 

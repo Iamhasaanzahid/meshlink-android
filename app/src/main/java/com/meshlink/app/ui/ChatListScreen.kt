@@ -40,7 +40,7 @@ fun ChatListScreen(
         EmptyState(
             title = "No chats yet",
             body = "Tap the pencil to start a chat. Messages travel over " +
-                "Wi-Fi Direct, Bluetooth or SMS — no internet required.",
+                "Wi-Fi LAN, Wi-Fi Direct, Bluetooth or SMS — no internet required.",
         )
         return
     }

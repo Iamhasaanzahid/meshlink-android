@@ -1,0 +1,6 @@
+1.6.0
+
+* New: message over the same Wi-Fi network or a phone hotspot, no internet
+* SMS fallback is now off by default and only asks for permission when you enable it
+* Fixed a background crash caused by the message retry loop
+* Replies now go back to the sender's MeshLink ID on every radio

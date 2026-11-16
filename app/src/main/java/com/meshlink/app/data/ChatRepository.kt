@@ -185,12 +185,20 @@ object ChatRepository {
      */
     fun retryPending() {
         scope.launch {
+            // A database problem here must never take the whole app down; the
+            // loop runs every 45 seconds in the background.
+            runCatching { retryPendingNow() }
+                .onFailure { android.util.Log.w("MeshLinkRepo", "retryPending failed", it) }
+        }
+    }
+
+    private fun retryPendingNow() {
             val pending = ArrayList<Message>()
             val since = System.currentTimeMillis() - 1000L * 60 * 60 * 24
             db.readableDatabase.rawQuery(
-                "SELECT id, chat_id, body, timestamp FROM messages " +
-                    "WHERE from_me = 1 AND status IN (?, ?) AND timestamp >= ? " +
-                    "ORDER BY timestamp LIMIT 30",
+                "SELECT id, chat_id, body, ts FROM messages " +
+                    "WHERE from_me = 1 AND status IN (?, ?) AND ts >= ? " +
+                    "ORDER BY ts LIMIT 30",
                 arrayOf(MsgStatus.FAILED.name, MsgStatus.SENT.name, since.toString()),
             ).use { c ->
                 while (c.moveToNext()) {
@@ -205,7 +213,7 @@ object ChatRepository {
                     )
                 }
             }
-            if (pending.isEmpty()) return@launch
+            if (pending.isEmpty()) return
             updateStatusBulk(pending.map { it.id }, MsgStatus.SENDING)
             for (m in pending) {
                 dispatch(m, allowSms = false)
@@ -214,7 +222,6 @@ object ChatRepository {
                 refreshMessages(it)
                 refreshChats()
             }
-        }
     }
 
     private fun updateStatusBulk(ids: List<String>, status: MsgStatus) {

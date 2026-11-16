@@ -9,25 +9,21 @@ import androidx.core.content.ContextCompat
 /**
  * The runtime permissions MeshLink needs, in one place.
  *
- * [why] is the plain-language reason shown to the user before the Android
- * dialogs appear, so the sensitive-permission warnings are not a surprise.
+ * Permissions are split in two groups on purpose:
+ *
+ *  - [core] keeps the free radio mesh alive (Bluetooth LE, Wi-Fi Direct,
+ *    Wi-Fi LAN, in-app calls). It never touches SMS.
+ *  - [sms] is only for the optional SMS fallback. Android warns that SMS can
+ *    cost money, so MeshLink asks for it only when the user switches that
+ *    feature on in Settings — never on first launch.
  */
 object PermissionsHelper {
 
     data class Item(val permission: String, val title: String, val why: String)
 
-    fun required(): List<Item> {
+    /** Everything the offline mesh needs, without SMS. */
+    fun core(): List<Item> {
         val list = mutableListOf(
-            Item(
-                Manifest.permission.SEND_SMS,
-                "Send SMS",
-                "Sends a message over your SIM when no MeshLink phone is in radio range.",
-            ),
-            Item(
-                Manifest.permission.RECEIVE_SMS,
-                "Receive SMS",
-                "Receives messages that arrive over SMS from other MeshLink users.",
-            ),
             Item(
                 Manifest.permission.RECORD_AUDIO,
                 "Microphone",
@@ -44,21 +40,6 @@ object PermissionsHelper {
                 "Switches between the earpiece, speakerphone and normal call audio.",
             ),
         )
-
-        // Android 12 and older need location to scan Wi-Fi Direct. On Android
-        // 13+ the Nearby devices permission replaces it, so do not ask for it.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            list += Item(
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                "Location",
-                "Android requires this to scan for nearby Wi-Fi Direct phones. MeshLink never reads or stores your location.",
-            )
-            list += Item(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                "Location",
-                "Same Wi-Fi Direct scan. Android asks for both together; nothing is read or stored.",
-            )
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             list += Item(
@@ -87,7 +68,22 @@ object PermissionsHelper {
             list += Item(
                 Manifest.permission.NEARBY_WIFI_DEVICES,
                 "Nearby devices",
-                "Android's replacement for location when scanning Wi-Fi Direct.",
+                "Finds MeshLink phones on the same Wi-Fi network or hotspot.",
+            )
+        }
+
+        // Android 12 and older need location to scan Wi-Fi Direct. On Android
+        // 13+ the Nearby devices permission replaces it, so do not ask for it.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            list += Item(
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                "Location",
+                "Android requires this to scan for nearby Wi-Fi Direct phones. MeshLink never reads or stores your location.",
+            )
+            list += Item(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                "Location",
+                "Same Wi-Fi Direct scan. Android asks for both together; nothing is read or stored.",
             )
         }
 
@@ -99,11 +95,30 @@ object PermissionsHelper {
         return list
     }
 
-    fun allPermissions(): Array<String> = required().map { it.permission }.distinct().toTypedArray()
+    /** Optional group: only needed for the SIM-based SMS fallback. */
+    fun sms(): List<Item> = listOf(
+        Item(
+            Manifest.permission.SEND_SMS,
+            "Send SMS",
+            "Only when you switch on SMS fallback in Settings. Your operator's normal SMS rate may apply.",
+        ),
+        Item(
+            Manifest.permission.RECEIVE_SMS,
+            "Receive SMS",
+            "Reads MeshLink messages that arrive as SMS. Personal SMS are never opened or stored.",
+        ),
+    )
 
-    fun missing(context: Context): List<String> = allPermissions().filter {
-        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-    }
+    fun corePermissions(): Array<String> = core().map { it.permission }.distinct().toTypedArray()
+
+    fun smsPermissions(): Array<String> = sms().map { it.permission }.distinct().toTypedArray()
+
+    fun missing(context: Context): List<String> = corePermissions().filter { !granted(context, it) }
 
     fun allGranted(context: Context): Boolean = missing(context).isEmpty()
+
+    fun smsGranted(context: Context): Boolean = smsPermissions().all { granted(context, it) }
+
+    fun granted(context: Context, permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }

@@ -39,7 +39,7 @@ fun PrivacyScreen(
     onAllow: () -> Unit,
     onSkip: () -> Unit,
 ) {
-    val items = PermissionsHelper.required()
+    val items = PermissionsHelper.core()
 
     Column(
         modifier = Modifier
@@ -144,13 +144,42 @@ fun PrivacyScreen(
             }
         }
 
+        Spacer(Modifier.height(12.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    "SMS is optional",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "MeshLink does not ask for SMS permission now. Android warns " +
+                        "that SMS can cost money, and that warning is true: it is " +
+                        "your operator's normal SMS rate. Turn on \"SMS fallback\" " +
+                        "in Settings only if you want messages to reach a phone " +
+                        "with no MeshLink nearby. Your number is never used unless " +
+                        "you type it in Settings.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
         Button(
             onClick = onAllow,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
         ) {
-            Text("Allow all and continue", fontSize = 15.sp)
+            Text("Allow mesh permissions and continue", fontSize = 15.sp)
         }
         TextButton(
             onClick = onSkip,

@@ -13,6 +13,7 @@ object MeshSettings {
 
     private const val PREFS = "meshlink_settings"
     private const val KEY_MAX_HOPS = "max_hops"
+    private const val KEY_SMS_FALLBACK = "sms_fallback"
 
     const val DEFAULT_HOPS = 8
     const val MIN_HOPS = 1
@@ -28,5 +29,16 @@ object MeshSettings {
         prefs(context).edit()
             .putInt(KEY_MAX_HOPS, hops.coerceIn(MIN_HOPS, MAX_HOPS))
             .apply()
+    }
+
+    /**
+     * SMS fallback is off by default. It is the only transport that can cost
+     * the user money, so it is opt-in and never used by automatic retries.
+     */
+    fun smsFallback(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SMS_FALLBACK, false)
+
+    fun setSmsFallback(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SMS_FALLBACK, enabled).apply()
     }
 }

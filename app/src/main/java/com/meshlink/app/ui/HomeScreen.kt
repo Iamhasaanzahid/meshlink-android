@@ -43,6 +43,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -88,6 +90,38 @@ fun HomeScreen(
 
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
     var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
+    var smsFallback by remember { mutableStateOf(MeshSettings.smsFallback(context)) }
+
+    // SMS permission is requested only when the user switches SMS fallback on,
+    // so first launch never shows Android's "SMS can cost money" warning.
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        if (PermissionsHelper.smsGranted(context)) {
+            MeshSettings.setSmsFallback(context, true)
+            smsFallback = true
+        } else {
+            MeshSettings.setSmsFallback(context, false)
+            smsFallback = false
+            Toast.makeText(
+                context,
+                "SMS fallback needs the SMS permission. Everything else keeps working without it.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    fun setSmsFallback(enabled: Boolean) {
+        if (!enabled) {
+            MeshSettings.setSmsFallback(context, false)
+            smsFallback = false
+        } else if (PermissionsHelper.smsGranted(context)) {
+            MeshSettings.setSmsFallback(context, true)
+            smsFallback = true
+        } else {
+            smsPermissionLauncher.launch(PermissionsHelper.smsPermissions())
+        }
+    }
 
     var engine by remember { mutableStateOf(MeshService.engine) }
     var status by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
@@ -267,6 +301,8 @@ fun HomeScreen(
                             SessionStore.savePhone(context, it)
                         },
                         missingPermissions = PermissionsHelper.missing(context).size,
+                        smsFallback = smsFallback,
+                        onToggleSmsFallback = { setSmsFallback(it) },
                         onOpenSystemSettings = {
                             runCatching {
                                 context.startActivity(

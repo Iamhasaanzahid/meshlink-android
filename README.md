@@ -103,6 +103,9 @@ handy when networks are down, not a replacement for a secure messenger.
 MeshLink collects no data at all. See [PRIVACY.md](PRIVACY.md) for the full
 permission and storage breakdown.
 
+SMS fallback is off by default. Bluetooth, Wi-Fi Direct and Wi-Fi LAN messages
+never include your SIM number; they carry only your `OFF-XXXXXX` ID.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

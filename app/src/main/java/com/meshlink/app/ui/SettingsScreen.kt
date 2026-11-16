@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +50,8 @@ fun SettingsScreen(
     onSavePhone: (String) -> Unit,
     missingPermissions: Int,
     onOpenSystemSettings: () -> Unit,
+    smsFallback: Boolean,
+    onToggleSmsFallback: (Boolean) -> Unit,
     onConnectPeer: (WifiP2pDevice) -> Unit,
     onRefreshPeers: () -> Unit,
     onLogout: () -> Unit,
@@ -137,6 +140,44 @@ fun SettingsScreen(
             }
         }
 
+        Spacer(Modifier.height(10.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "SMS fallback",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                        )
+                        Text(
+                            if (smsFallback) "On · uses your SIM when no MeshLink phone is near"
+                            else "Off · free radio mesh only",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = smsFallback, onCheckedChange = onToggleSmsFallback)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Android warns that SMS can cost money — that is your operator's " +
+                        "normal SMS rate, not a MeshLink charge. It is off by default " +
+                        "and automatic retries never send SMS. Bluetooth, Wi-Fi Direct " +
+                        "and Wi-Fi LAN are always free.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Spacer(Modifier.height(18.dp))
         SectionTitle("Radios")
         Card(
@@ -166,6 +207,16 @@ fun SettingsScreen(
                         "${status["wifiPeers"] ?: 0} peer(s) nearby · 50–200 m per hop"
                     },
                     status["wifiDirectActive"] == true,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                InfoRow(
+                    "Wi-Fi (same network)",
+                    if (status["wifiLanActive"] == true) {
+                        "${status["wifiLanPeers"] ?: 0} phone(s) on this network · free, no data"
+                    } else {
+                        "not listening"
+                    },
+                    status["wifiLanActive"] == true,
                 )
             }
         }
@@ -224,7 +275,14 @@ fun SettingsScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 InfoRow("Wi-Fi Direct", "50–200 m per hop · no router", true)
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                InfoRow("Cellular radio (SMS)", "city-wide or nationwide with a SIM", true)
+                InfoRow("Wi-Fi (same network)", "whole house/campus · router or hotspot", true)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                InfoRow(
+                    "Cellular radio (SMS)",
+                    if (status["smsFallbackEnabled"] == true) "city-wide or nationwide · opt-in"
+                    else "off · switch it on in Settings",
+                    status["smsFallbackEnabled"] == true,
+                )
             }
         }
         Text(

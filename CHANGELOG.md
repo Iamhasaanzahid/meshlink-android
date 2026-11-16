@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.0 — 2026-11-16
+
+### Added
+- **Wi-Fi LAN transport**: two phones on the same router or on one phone's
+  hotspot can message each other over the local network, with no mobile data
+  and no internet. It sits between Wi-Fi Direct and Bluetooth in the radio
+  order and relays frames like the other transports.
+- **SMS fallback is now opt-in.** It is off by default and the app never asks
+  for the SMS permission on first launch. A switch in Settings requests the
+  permission only when the user turns it on, which avoids Android's
+  "SMS may cost you money" warning for everyone who does not need SMS.
+- Incoming messages carry the sender's UIN, so replies go back to that phone
+  instead of to a raw MAC/IP address on every transport.
+
+### Fixed
+- **Crash every 45 seconds** in the store-and-forward retry loop: the query
+  used a `timestamp` column that does not exist (the column is `ts`). Any
+  user with a chat could have the app killed in the background. Retries are
+  also wrapped so a database error can never take the process down again.
+- Removed `READ_SMS` and `RECEIVE_MMS` from the manifest; the app only needs
+  `RECEIVE_SMS` for its own messages.
+
 ## 1.5.1 — 2026-11-16
 
 ### Fixed

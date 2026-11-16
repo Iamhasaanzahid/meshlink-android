@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
+import com.meshlink.app.BuildConfig
 import java.security.SecureRandom
 
 private val Purple = Color(0xFF6750A4)
@@ -33,8 +34,9 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
     var offlineUin by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
 
+    // Light background so the purple title and body text stay readable.
     val gradient = Brush.verticalGradient(
-        listOf(Purple, Color(0xFF9C88FF), PurpleLight, Color(0xFFFEF7FF))
+        listOf(Color(0xFFF3EDF7), Color(0xFFFEF7FF), Color.White)
     )
 
     Box(
@@ -165,14 +167,14 @@ fun SignupScreen(onSignupSuccess: (uin: String, displayName: String) -> Unit) {
 
             Spacer(Modifier.height(26.dp))
             FeatureItem("✓", "No phone number needed")
-            FeatureItem("✓", "End-to-End Encrypted")
+            FeatureItem("✓", "No account, no server, no tracking")
             FeatureItem("✓", "Works offline via radio mesh")
 
             Spacer(Modifier.height(18.dp))
             RadioStatusCard()
 
             Spacer(Modifier.height(14.dp))
-            Text("v1.2.0 · Free Forever", fontSize = 12.sp, color = Color(0xFF9E9A9F))
+            Text("v${BuildConfig.VERSION_NAME} · Free Forever", fontSize = 12.sp, color = Muted)
         }
     }
 }
