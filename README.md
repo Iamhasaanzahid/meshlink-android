@@ -29,6 +29,10 @@ crowd, a building or a village where the network is down.
 - **Contacts** — saved on the device, one tap to chat or call.
 - **Radio status** — live state of all three radios and one-tap pairing with
   nearby Wi-Fi Direct phones.
+- **Relay hops** — choose how many phones a message may pass through
+  (1–20, default 8) to trade speed for reach.
+- **Store-and-forward** — undelivered messages keep retrying over Wi-Fi Direct
+  and Bluetooth LE as the phone moves between people.
 - **Fully offline identity** — the ID is generated on the phone. Nothing is
   uploaded anywhere.
 
@@ -73,6 +77,8 @@ Android gates behind that permission. The app does not talk to any server.
 
 ## Status
 
+- `1.3.0` — relay hops setting (1–20 phones), store-and-forward retries,
+  coverage card, signed release builds.
 - `1.2.0` — WhatsApp-style UI, persistent chats, working Wi-Fi Direct calls,
   delivery receipts, call log, contacts, fully offline signup.
 - `1.1.0` — first public build with chat, push-to-talk voice and radio status.

@@ -19,6 +19,12 @@ import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.CallManager
 import com.meshlink.app.mesh.CallUiState
 import com.meshlink.app.mesh.MeshEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Tracks whether an activity is visible, so we only notify in the background. */
 object AppForeground {
@@ -41,6 +47,9 @@ class MeshService : Service() {
         private const val MESSAGE_NOTIFICATION_ID = 1002
         private const val CALL_NOTIFICATION_ID = 1003
 
+        /** Store-and-forward: retry pending messages while the service runs. */
+        private const val RETRY_INTERVAL_MS = 45_000L
+
         const val ACTION_START = "com.meshlink.app.START_MESH"
         const val ACTION_STOP = "com.meshlink.app.STOP_MESH"
         const val EXTRA_UIN = "uin"
@@ -49,6 +58,9 @@ class MeshService : Service() {
         var engine: MeshEngine? = null
             private set
     }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var retryJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -71,6 +83,13 @@ class MeshService : Service() {
         ChatRepository.onNewMessage = { message, chat -> notifyMessage(message, chat) }
 
         mesh.start()
+
+        retryJob = serviceScope.launch {
+            while (true) {
+                delay(RETRY_INTERVAL_MS)
+                runCatching { ChatRepository.retryPending() }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -92,6 +111,8 @@ class MeshService : Service() {
     }
 
     override fun onDestroy() {
+        retryJob?.cancel()
+        retryJob = null
         engine?.stop()
         engine = null
         super.onDestroy()

@@ -1,0 +1,6 @@
+1.3.0
+
+* Relay hops setting: choose how many phones a message may pass through
+* Store-and-forward retries keep trying over Wi-Fi Direct and Bluetooth LE
+* Coverage card shows per-radio range and what long distance really needs
+* Signed release build

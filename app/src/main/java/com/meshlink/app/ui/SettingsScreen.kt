@@ -18,6 +18,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +28,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meshlink.app.data.MeshSettings
+import kotlin.math.roundToInt
 import com.meshlink.app.BuildConfig
 
 @Composable
@@ -35,6 +38,8 @@ fun SettingsScreen(
     displayName: String,
     status: Map<String, Any>,
     wifiPeers: List<WifiP2pDevice>,
+    maxHops: Int,
+    onMaxHopsChange: (Int) -> Unit,
     onConnectPeer: (WifiP2pDevice) -> Unit,
     onRefreshPeers: () -> Unit,
     onLogout: () -> Unit,
@@ -115,6 +120,74 @@ fun SettingsScreen(
                 )
             }
         }
+
+        Spacer(Modifier.height(18.dp))
+        SectionTitle("Range & relays")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Relay hops",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "$maxHops phone${if (maxHops == 1) "" else "s"}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Slider(
+                    value = maxHops.toFloat(),
+                    onValueChange = { onMaxHopsChange(it.roundToInt()) },
+                    valueRange = MeshSettings.MIN_HOPS.toFloat()..MeshSettings.MAX_HOPS.toFloat(),
+                    steps = MeshSettings.MAX_HOPS - MeshSettings.MIN_HOPS - 1,
+                )
+                Text(
+                    "How many MeshLink phones a message may pass through. Every extra " +
+                        "hop adds reach, but delivery is slower because each phone has to " +
+                        "receive and re-broadcast the frame. Relaying only works when other " +
+                        "MeshLink phones are actually in between.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionTitle("Coverage")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                InfoRow("Bluetooth LE", "10–50 m per hop · no SIM, no router", true)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                InfoRow("Wi-Fi Direct", "50–200 m per hop · no router", true)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                InfoRow("Cellular radio (SMS)", "city-wide or nationwide with a SIM", true)
+            }
+        }
+        Text(
+            "There is no way to send a message 100 km directly from a phone: " +
+                "Bluetooth and Wi-Fi Direct are short-range radios, and phone FM " +
+                "hardware is a receiver, not a transmitter (and broadcasting needs a " +
+                "licensed station). Long distances work by chaining phones with " +
+                "multi-hop relaying, or by the SMS radio.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
 
         Spacer(Modifier.height(12.dp))
         Row(

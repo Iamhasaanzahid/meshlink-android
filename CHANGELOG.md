@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0 — 2026-11-16
+
+### Added
+- **Relay hops setting** (1–20 phones) so users can trade delivery speed for
+  reach. The default is now 8 hops instead of 5.
+- **Coverage card** in Settings that shows the real per-radio range
+  (Bluetooth LE, Wi-Fi Direct, SMS) and explains why long distances need a
+  chain of phones or the SMS radio.
+- **Store-and-forward retries**: messages that could not be delivered are
+  retried automatically every 45 seconds over Wi-Fi Direct and Bluetooth LE,
+  so a message keeps travelling as the phone moves between people. Automatic
+  retries never use SMS, so they cannot cost money.
+
+### Changed
+- Release builds can be signed locally with `KEYSTORE_FILE` and friends; the
+  published APK is now signed, not a debug build.
+
 ## 1.2.0 — 2026-11-15
 
 ### Added

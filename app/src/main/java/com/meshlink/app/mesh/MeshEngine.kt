@@ -3,6 +3,7 @@ package com.meshlink.app.mesh
 import android.content.Context
 import android.net.wifi.p2p.WifiP2pDevice
 import android.util.Log
+import com.meshlink.app.data.MeshSettings
 import org.json.JSONObject
 import java.security.MessageDigest
 
@@ -42,6 +43,9 @@ class MeshEngine(private val context: Context) {
         private const val SEG_MAX_PARTS = 255
         private const val SEG_TIMEOUT_MS = 2 * 60 * 1000L
     }
+
+    /** How many phones a frame may pass through before it is dropped. */
+    private fun hops(): Int = MeshSettings.maxHops(context)
 
     /** Our mesh node id, derived from our UIN. */
     @Volatile
@@ -160,6 +164,7 @@ class MeshEngine(private val context: Context) {
         messageId: String,
         body: String,
         senderName: String = "",
+        allowSms: Boolean = true,
     ): Boolean {
         val target = destination.trim()
         if (target.isEmpty() || body.isEmpty()) return false
@@ -168,7 +173,7 @@ class MeshEngine(private val context: Context) {
                 Log.w(TAG, "cannot build frames", it)
                 return false
             }
-        return sendFrames(target, frames)
+        return sendFrames(target, frames, allowSms)
     }
 
     /** True when [destination] can be dialled/SMSed over the cellular radio. */
@@ -183,7 +188,11 @@ class MeshEngine(private val context: Context) {
             TransportType.AUTO -> sendFrames(destination, listOf(frame))
         }
 
-    private fun sendFrames(destination: String, frames: List<ByteArray>): Boolean {
+    private fun sendFrames(
+        destination: String,
+        frames: List<ByteArray>,
+        allowSms: Boolean = true,
+    ): Boolean {
         val numeric = isRadioNumber(destination)
 
         if (wifiActive) {
@@ -196,7 +205,7 @@ class MeshEngine(private val context: Context) {
             for (f in frames) ok = ble.send(null, f) > 0 && ok
             if (ok) return true
         }
-        if (numeric && RadioTransport.isAvailable(context)) {
+        if (allowSms && numeric && RadioTransport.isAvailable(context)) {
             var ok = true
             for (f in frames) ok = RadioTransport.sendFrame(context, destination, f) && ok
             if (ok) return true
@@ -225,7 +234,7 @@ class MeshEngine(private val context: Context) {
                     type = MeshFrame.TYPE_MESSAGE,
                     sourceNodeId = localNodeId,
                     destNodeId = destNode,
-                    ttl = MeshFrame.DEFAULT_TTL,
+                    ttl = hops(),
                     payload = payload,
                 ).serialize()
             )
@@ -251,7 +260,7 @@ class MeshEngine(private val context: Context) {
                 type = MeshFrame.TYPE_SEGMENT,
                 sourceNodeId = localNodeId,
                 destNodeId = destNode,
-                ttl = MeshFrame.DEFAULT_TTL,
+                ttl = hops(),
                 payload = buf,
             ).serialize()
         }
@@ -271,7 +280,7 @@ class MeshEngine(private val context: Context) {
             type = MeshFrame.TYPE_CALL,
             sourceNodeId = localNodeId,
             destNodeId = MeshFrame.nodeId16(destination),
-            ttl = MeshFrame.DEFAULT_TTL,
+            ttl = hops(),
             payload = payload,
         ).serialize()
         return sendFrames(destination, listOf(frame))
@@ -395,7 +404,7 @@ class MeshEngine(private val context: Context) {
             type = MeshFrame.TYPE_ACK,
             sourceNodeId = localNodeId,
             destNodeId = MeshFrame.nodeId16(destination),
-            ttl = MeshFrame.DEFAULT_TTL,
+            ttl = hops(),
             payload = payload,
         ).serialize()
         runCatching { sendFrames(destination, listOf(frame)) }

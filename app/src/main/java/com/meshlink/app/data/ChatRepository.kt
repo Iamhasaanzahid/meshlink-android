@@ -173,7 +173,62 @@ object ChatRepository {
         }
     }
 
-    private fun dispatch(message: Message) {
+    /**
+     * Store-and-forward: tries again for messages that were handed to no
+     * radio, or that were sent but never acknowledged. Called periodically by
+     * the foreground service, so a message keeps trying while the phone moves
+     * between people instead of dying after one attempt.
+     *
+     * SMS is never used here: automatic retries must not cost the user money.
+     * A message that can only travel by SMS stays failed until the user taps
+     * retry.
+     */
+    fun retryPending() {
+        scope.launch {
+            val pending = ArrayList<Message>()
+            val since = System.currentTimeMillis() - 1000L * 60 * 60 * 24
+            db.readableDatabase.rawQuery(
+                "SELECT id, chat_id, body, timestamp FROM messages " +
+                    "WHERE from_me = 1 AND status IN (?, ?) AND timestamp >= ? " +
+                    "ORDER BY timestamp LIMIT 30",
+                arrayOf(MsgStatus.FAILED.name, MsgStatus.SENT.name, since.toString()),
+            ).use { c ->
+                while (c.moveToNext()) {
+                    pending += Message(
+                        id = c.getString(0),
+                        chatId = c.getString(1),
+                        fromMe = true,
+                        body = c.getString(2),
+                        timestamp = c.getLong(3),
+                        transport = "AUTO",
+                        status = MsgStatus.SENT,
+                    )
+                }
+            }
+            if (pending.isEmpty()) return@launch
+            updateStatusBulk(pending.map { it.id }, MsgStatus.SENDING)
+            for (m in pending) {
+                dispatch(m, allowSms = false)
+            }
+            pending.map { it.chatId }.distinct().forEach {
+                refreshMessages(it)
+                refreshChats()
+            }
+        }
+    }
+
+    private fun updateStatusBulk(ids: List<String>, status: MsgStatus) {
+        if (ids.isEmpty()) return
+        db.writableDatabase.beginTransaction()
+        try {
+            ids.forEach { updateStatus(it, status) }
+            db.writableDatabase.setTransactionSuccessful()
+        } finally {
+            db.writableDatabase.endTransaction()
+        }
+    }
+
+    private fun dispatch(message: Message, allowSms: Boolean = true) {
         val engine = MeshService.engine
         val displayName = appContext?.let { SessionStore.displayName(it) } ?: ""
         val ok = engine?.sendMessage(
@@ -181,6 +236,7 @@ object ChatRepository {
             messageId = message.id,
             body = message.body,
             senderName = displayName,
+            allowSms = allowSms,
         ) ?: false
 
         val status = if (ok) MsgStatus.SENT else MsgStatus.FAILED
