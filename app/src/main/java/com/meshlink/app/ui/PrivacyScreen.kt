@@ -97,9 +97,9 @@ fun PrivacyScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "• no account and no sign-up\n" +
-                        "• no internet server to talk to\n" +
-                        "• no ads and no analytics\n" +
-                        "• no upload of chats, calls or contacts\n" +
+                        "• no MeshLink server and no tracking\n" +
+                        "• online mode is optional and off by default\n" +
+                        "• no ads, no analytics, no address-book upload\n" +
                         "• no reading your location or your files",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,

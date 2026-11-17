@@ -4,12 +4,15 @@
 
 MeshLink is an Android messenger that talks to other phones directly over the
 phone's own radios — no servers, no accounts, no data plan and no Wi-Fi router.
+An optional **online mode** adds worldwide messaging over ordinary Wi-Fi or
+mobile data, for when the other person is not nearby.
 
 | Radio | Needs | Typical range |
 |-------|-------|---------------|
 | **Wi-Fi Direct** | nothing (phone-to-phone Wi-Fi) | 50–200 m per hop |
 | **Bluetooth LE** | nothing | 10–50 m per hop |
 | **Cellular radio (SMS)** | a SIM with signal | city / nationwide |
+| **Online mode (www)** | any internet connection | worldwide |
 
 Messages hop phone → phone → phone (5 hops by default), so a chat can cross a
 crowd, a building or a village where the network is down.
@@ -22,9 +25,11 @@ crowd, a building or a village where the network is down.
   status (queued / sent / delivered) and tap-to-retry when a radio can't reach
   the other phone.
 - **Calls** — ring, accept, mute, speaker and hang up, with a live timer.
-  Voice is streamed directly between the two phones over Wi-Fi Direct.
-  If the two phones are not in a Wi-Fi Direct group, the app offers a normal
-  SIM call instead.
+  Voice is streamed directly between the two phones over Wi-Fi: a shared
+  router/hotspot (UDP) or a Wi-Fi Direct group. If neither path exists, the
+  app offers a normal SIM call instead.
+- **Online mode (www)** — switch it on in Settings to send messages anywhere in
+  the world through an MQTT relay. Off by default; see *Online mode* below.
 - **Photos and documents** — send a picture from the gallery, take a new one,
   or attach any document. Photos are auto-rotated and compressed; tap to view
   full screen, tap a document to open it. Transfers use Wi-Fi LAN → Wi-Fi
@@ -97,8 +102,10 @@ Android gates behind that permission. The app does not talk to any server.
 ## Security
 
 MeshLink 1.2.0 does **not** encrypt message or call payloads in transit yet.
-Messages can travel over SMS, Bluetooth LE and Wi-Fi Direct, and anyone with
-the right radio equipment in range could read them. The identity key pair is
+Messages can travel over SMS, Bluetooth LE, Wi-Fi Direct, Wi-Fi LAN and the
+optional online relay, and anyone with the right radio equipment in range (or
+the relay's logs) could see the metadata. Online-mode payloads are AES-GCM
+encrypted; local-radio payloads are not yet. The identity key pair is
 generated in the Android Keystore on the device and is never uploaded.
 
 Transport encryption is planned; until then, treat MeshLink like a radio:
@@ -117,6 +124,24 @@ reassembled on the other phone, so a dropped chunk only costs that chunk.
 Wi-Fi Direct or the same Wi-Fi network is the right path for photos; Bluetooth
 LE works but is slow (a photo can take about a minute). SMS is never used for
 files. Like text messages, file payloads are not end-to-end encrypted yet.
+
+## Online mode (worldwide messages)
+
+Settings → **Online mode (www)**. When it is on, every text message is also
+published to a relay so it can reach a phone on another network or another
+continent. The default relay is a free public MQTT broker
+(`ssl://broker.hivemq.com:8883`); the field in Settings accepts your own
+broker address.
+
+Each message frame is encrypted with AES-GCM. The key is derived from the two
+UINs, so the relay and other subscribers see only ciphertext. This is honest
+about its limits: it is not a verified end-to-end key exchange, the relay
+operator can see who is talking to whom, and anyone who knows both UINs could
+derive the key. Turn it off when you do not need it; local radios stay free,
+private and instant.
+
+Latency over the relay is usually a few hundred milliseconds. QoS 0 is used on
+purpose — the mesh layer already retries and deduplicates.
 
 ## Online calls (internet)
 

@@ -611,6 +611,7 @@ private fun ticks(status: MsgStatus): String = when (status) {
 private fun transportShort(transport: String): String = when (transport) {
     "WIFI_DIRECT" -> "Wi-Fi Direct"
     "WIFI_LAN" -> "Wi-Fi LAN"
+    "ONLINE" -> "Online"
     "BLUETOOTH_LE" -> "BLE"
     "RADIO_SMS" -> "SMS"
     "AUTO" -> "Auto"

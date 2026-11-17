@@ -6,6 +6,7 @@ import android.util.Log
 import com.meshlink.app.data.MeshSettings
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.concurrent.Executors
 
 enum class TransportType {
     /** Cellular radio via SMS — works with only a SIM, no internet. */
@@ -19,6 +20,9 @@ enum class TransportType {
 
     /** Wi-Fi LAN — both phones on the same router or hotspot, no internet. */
     WIFI_LAN,
+
+    /** Internet relay (MQTT) — worldwide messaging over Wi-Fi or mobile data. */
+    ONLINE,
 
     /** Try every available radio. */
     AUTO,
@@ -77,11 +81,21 @@ class MeshEngine(private val context: Context) {
           size: Long, transport: TransportType, senderName: String) -> Unit)? = null
 
     /** Call signalling: action = invite / accept / reject / end. */
-    var onControl: ((from: String, action: String, callId: String, name: String) -> Unit)? = null
+    var onControl:
+        ((from: String, action: String, callId: String, name: String, peerIp: String) -> Unit)? = null
 
     private val ble = BleTransport(context)
     private val wifi = WifiDirectTransport(context)
     private val lan = LanTransport(context)
+    private var online: OnlineTransport? = null
+
+    /**
+     * Online publishes happen on their own thread: a broker write must never
+     * block the UI (or a call's ring/accept path).
+     */
+    private val onlineSender = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "meshlink-online-tx").apply { isDaemon = true }
+    }
 
     private val seen = LinkedHashMap<String, Long>()
     private val seenLock = Any()
@@ -146,6 +160,8 @@ class MeshEngine(private val context: Context) {
         this.localUin = localUin
         localNodeId = MeshFrame.nodeId16(localUin)
         localNodeIds = setOf(localNodeId)
+        // The service can configure the UIN after (or before) start().
+        if (MeshSettings.onlineEnabled(context) && localUin.isNotBlank()) startOnline()
     }
 
     fun start() {
@@ -175,6 +191,9 @@ class MeshEngine(private val context: Context) {
         }
         lan.onFrame = { addr, bytes -> handleIncoming(addr, TransportType.WIFI_LAN, bytes) }
 
+        // Online mode is opt-in; it needs internet and a relay broker.
+        if (MeshSettings.onlineEnabled(context)) startOnline()
+
         Log.i(
             TAG,
             "Mesh started (BLE=$bleActive, Wi-FiDirect=$wifiActive, Wi-FiLAN=$lanActive, " +
@@ -189,6 +208,49 @@ class MeshEngine(private val context: Context) {
         bleActive = false
         wifiActive = false
         lanActive = false
+        online?.stop()
+        online = null
+    }
+
+    // ------------------------------------------------------------- online mode
+
+    /** Turns the worldwide internet relay on or off and remembers the choice. */
+    fun setOnlineMode(enabled: Boolean) {
+        MeshSettings.setOnlineEnabled(context, enabled)
+        if (enabled) {
+            startOnline()
+        } else {
+            online?.stop()
+            online = null
+        }
+    }
+
+    /** Reconnects after the broker address changed in Settings. */
+    fun restartOnline() {
+        online?.stop()
+        online = null
+        if (MeshSettings.onlineEnabled(context)) startOnline()
+    }
+
+    private fun startOnline() {
+        val me = localUin
+        if (me.isBlank()) return
+        val t = online ?: OnlineTransport(context).also {
+            it.onFrame = { from, bytes -> handleIncoming(from, TransportType.ONLINE, bytes) }
+            online = it
+        }
+        t.start(me, MeshSettings.onlineBroker(context))
+    }
+
+    private fun publishOnline(destination: String, frames: List<ByteArray>): Boolean {
+        val t = online ?: return false
+        if (!t.isConnected) return false
+        // Fire and forget, in order. The mesh layer retries anything that is
+        // not acknowledged, so a slow broker never blocks the caller.
+        onlineSender.execute {
+            for (f in frames) runCatching { t.publish(destination, f) }
+        }
+        return true
     }
 
     // ---------------------------------------------------------------- sending
@@ -230,6 +292,7 @@ class MeshEngine(private val context: Context) {
             TransportType.BLUETOOTH_LE -> ble.send(null, frame) > 0
             TransportType.WIFI_DIRECT -> wifi.send(frame)
             TransportType.WIFI_LAN -> lan.send(frame)
+            TransportType.ONLINE -> sendFrames(destination, listOf(frame))
             TransportType.AUTO -> sendFrames(destination, listOf(frame))
         }
 
@@ -248,32 +311,45 @@ class MeshEngine(private val context: Context) {
             else -> null
         }
 
-        if (wifiActive) {
-            var ok = true
-            for (f in frames) ok = wifi.send(f) && ok
-            if (ok) return true
-        }
-        if (lanActive) {
-            var ok = true
-            for (f in frames) ok = lan.send(f) && ok
-            if (ok) return true
-        }
-        if (bleActive) {
-            var ok = true
-            for (f in frames) ok = ble.send(null, f) > 0 && ok
-            if (ok) return true
-        }
+        // Online mode is the only path that crosses the world, so publish
+        // first when it is switched on. Local radios still get the frame too,
+        // which keeps nearby chats instant and lets both paths race.
+        val onlineOk = if (destination.trim().uppercase().startsWith("OFF-")) {
+            publishOnline(destination, frames)
+        } else false
+
+        val lanReady = lanActive && lan.peerCount() > 0
+        val wifiReady = wifiActive && wifi.hasGroup
+        val bleReady = bleActive && ble.connectedPeerCount > 0
+
+        // Known-good radios first so a nearby message never waits on a radio
+        // that has no peers.
+        if (lanReady && sendAll(frames) { lan.send(it) }) return true
+        if (wifiReady && sendAll(frames) { wifi.send(it) }) return true
+        if (bleReady && sendAll(frames) { ble.send(null, it) > 0 }) return true
+
+        // Then the remaining radios (a broadcast can still find a peer).
+        if (lanActive && sendAll(frames) { lan.send(it) }) return true
+        if (wifiActive && sendAll(frames) { wifi.send(it) }) return true
+        if (bleActive && sendAll(frames) { ble.send(null, it) > 0 }) return true
+
+        if (onlineOk) return true
+
         // SMS is strictly opt-in: it uses the SIM and may cost money, so the
         // user has to switch it on in Settings and grant the SMS permission.
         if (allowSms && smsTo != null &&
             MeshSettings.smsFallback(context) &&
             RadioTransport.isAvailable(context)
         ) {
-            var ok = true
-            for (f in frames) ok = RadioTransport.sendFrame(context, smsTo, f) && ok
-            if (ok) return true
+            if (sendAll(frames) { RadioTransport.sendFrame(context, smsTo, it) }) return true
         }
         return false
+    }
+
+    private inline fun sendAll(frames: List<ByteArray>, send: (ByteArray) -> Boolean): Boolean {
+        var ok = true
+        for (f in frames) ok = send(f) && ok
+        return ok
     }
 
     private fun buildFrames(
@@ -335,14 +411,29 @@ class MeshEngine(private val context: Context) {
 
     /** Call signalling frame (invite / accept / reject / end). */
     fun sendControl(destination: String, action: String, callId: String, name: String): Boolean {
-        val payload = JSONObject()
+        // Call signalling must fit in one 96-byte frame, so the id is short
+        // and the display name is trimmed. The LAN IP lets the other phone
+        // send voice straight back over the same Wi-Fi network.
+        val ip = localLanIp() ?: ""
+        var payload = JSONObject()
             .put("a", action)
-            .put("id", callId)
-            .put("n", name)
+            .put("id", callId.take(8))
+            .put("n", name.take(12))
             .put("u", localUin)
+            .put("ip", ip)
             .toString()
             .toByteArray(Charsets.UTF_8)
-            .let { if (it.size > MeshFrame.MAX_PAYLOAD) it.copyOf(MeshFrame.MAX_PAYLOAD) else it }
+        if (payload.size > MeshFrame.MAX_PAYLOAD) {
+            // Drop the name before giving up: the UIN is what routes the call.
+            payload = JSONObject()
+                .put("a", action)
+                .put("id", callId.take(8))
+                .put("u", localUin)
+                .put("ip", ip)
+                .toString()
+                .toByteArray(Charsets.UTF_8)
+        }
+        if (payload.size > MeshFrame.MAX_PAYLOAD) return false
         val frame = MeshFrame.Frame(
             type = MeshFrame.TYPE_CALL,
             sourceNodeId = localNodeId,
@@ -604,6 +695,7 @@ class MeshEngine(private val context: Context) {
 
     private fun isForMe(frame: MeshFrame.Frame, transport: TransportType): Boolean =
         transport == TransportType.RADIO_SMS ||
+            transport == TransportType.ONLINE ||
             frame.destNodeId == 0 ||
             localNodeIds.contains(frame.destNodeId)
 
@@ -685,8 +777,9 @@ class MeshEngine(private val context: Context) {
             val callId = json.optString("id", "")
             val name = json.optString("n", "")
             val sender = json.optString("u", "").takeIf { it.isNotBlank() } ?: from
+            val peerIp = json.optString("ip", "")
             if (action.isNotEmpty() && callId.isNotEmpty()) {
-                onControl?.invoke(sender, action, callId, name)
+                onControl?.invoke(sender, action, callId, name, peerIp)
             }
         }
     }
@@ -698,6 +791,14 @@ class MeshEngine(private val context: Context) {
     fun connectWifiPeer(device: WifiP2pDevice) = wifi.connect(device)
 
     fun refreshWifiPeers() = wifi.discover()
+
+    /** True when the UDP LAN transport was started (same Wi-Fi / hotspot). */
+    val lanIsActive: Boolean get() = lanActive
+
+    /** This phone's IPv4 address on the local Wi-Fi network, if any. */
+    fun localLanIp(): String? = lan.localIp()
+
+    val onlineIsConnected: Boolean get() = online?.isConnected == true
 
     val wifiGroupOwnerIp: String? get() = wifi.groupOwnerIp
 
@@ -722,6 +823,9 @@ class MeshEngine(private val context: Context) {
         "wifiGroupOwnerIp" to (wifi.groupOwnerIp ?: ""),
         "wifiPeers" to wifi.peerDevices().size,
         "localNodeId" to localNodeId,
+        "onlineEnabled" to MeshSettings.onlineEnabled(context),
+        "onlineConnected" to (online?.isConnected == true),
+        "onlineBroker" to MeshSettings.onlineBroker(context),
     )
 
     // ------------------------------------------------------------------- utils

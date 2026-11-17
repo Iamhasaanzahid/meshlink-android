@@ -26,9 +26,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.UUID
 import kotlin.concurrent.thread
 
@@ -56,6 +60,8 @@ data class CallUiState(
     val speakerOn: Boolean = true,
     val connectedAt: Long = 0L,
     val note: String = "",
+    /** "Wi-Fi" (same network) or "Wi-Fi Direct" (phone-to-phone group). */
+    val transport: String = "",
 )
 
 /**
@@ -88,6 +94,8 @@ object CallManager {
     private val handler = Handler(Looper.getMainLooper())
 
     private var socket: Socket? = null
+    private var udpSocket: DatagramSocket? = null
+    @Volatile private var peerAudioIp: String? = null
     private var output: DataOutputStream? = null
     private var serverSocket: ServerSocket? = null
     private var record: AudioRecord? = null
@@ -129,16 +137,21 @@ object CallManager {
         val mesh = engine ?: return false
         val ctx = appContext ?: return false
         if (_state.value.phase != CallPhase.IDLE) return false
-        if (!mesh.wifiHasGroup) return false
+        // A call needs some direct Wi-Fi path: either a Wi-Fi Direct group or
+        // both phones on the same Wi-Fi network / hotspot.
+        val overLan = mesh.lanIsActive && !mesh.localLanIp().isNullOrBlank()
+        if (!mesh.wifiHasGroup && !overLan) return false
 
-        val id = UUID.randomUUID().toString()
+        peerAudioIp = null
+        val id = UUID.randomUUID().toString().take(8)
         _state.value = CallUiState(
             id = id,
             peer = peer,
             name = name.ifBlank { peer },
             outgoing = true,
             phase = CallPhase.DIALING,
-            note = "Calling over Wi-Fi Direct…",
+            note = if (overLan) "Calling over Wi-Fi…" else "Calling over Wi-Fi Direct…",
+            transport = if (overLan) "Wi-Fi" else "Wi-Fi Direct",
         )
         val sent = mesh.sendControl(peer, "invite", id, SessionStore.displayName(ctx))
         if (!sent) {
@@ -199,10 +212,11 @@ object CallManager {
 
     // ------------------------------------------------------------- signalling
 
-    private fun onControl(from: String, action: String, callId: String, name: String) {
+    private fun onControl(from: String, action: String, callId: String, name: String, peerIp: String) {
         val s = _state.value
         when (action) {
             "invite" -> {
+                peerAudioIp = peerIp.takeIf { it.isNotBlank() }
                 if (s.phase != CallPhase.IDLE) {
                     engine?.sendControl(from, "reject", callId, nameForUs())
                     return
@@ -216,6 +230,7 @@ object CallManager {
                     outgoing = false,
                     phase = CallPhase.RINGING,
                     note = "Incoming call",
+                    transport = if (peerIp.isNotBlank()) "Wi-Fi" else "Wi-Fi Direct",
                 )
                 _state.value = state
                 startRinging()
@@ -224,6 +239,7 @@ object CallManager {
             }
             "accept" -> {
                 if (s.id == callId && s.outgoing && s.phase == CallPhase.DIALING) {
+                    peerAudioIp = peerIp.takeIf { it.isNotBlank() }
                     handler.removeCallbacks(timeout)
                     _state.value = s.copy(phase = CallPhase.CONNECTING, note = "Connecting…")
                     openAudio()
@@ -249,6 +265,14 @@ object CallManager {
     // ----------------------------------------------------------------- audio
 
     private fun openAudio() {
+        // Same Wi-Fi network: plain UDP in both directions. The IP came over
+        // the call signalling, so no Wi-Fi Direct group is needed.
+        val lanIp = peerAudioIp
+        if (lanIp != null && lanIp.isNotBlank()) {
+            openLanAudio(lanIp)
+            return
+        }
+
         val mesh = engine ?: return
         val host = mesh.wifiIsGroupOwner
         val ownerIp = mesh.wifiGroupOwnerIp
@@ -288,6 +312,101 @@ object CallManager {
         }
     }
 
+    /**
+     * Voice over the local Wi-Fi network (router or hotspot).
+     *
+     * Both phones bind UDP 8990 and send 20 ms of 8 kHz audio to each other's
+     * address. No handshake, no server: the first packet is the handshake.
+     */
+    private fun openLanAudio(peerIp: String) {
+        ended = false
+        prepareAudio()
+        _state.value = _state.value.copy(phase = CallPhase.CONNECTING, note = "Connecting…")
+
+        thread(name = "meshlink-call-lan", isDaemon = true) {
+            try {
+                val sock = DatagramSocket(null).apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(AUDIO_PORT))
+                    soTimeout = 1_000
+                }
+                udpSocket = sock
+                startPlayback()
+                startLanMic(sock, peerIp)
+                startLanReader(sock)
+
+                // If no audio arrives in 10 seconds the network is blocking
+                // phone-to-phone traffic (some public Wi-Fi does this).
+                Thread.sleep(10_000)
+                if (!ended && _state.value.phase != CallPhase.ACTIVE) {
+                    finish(
+                        "FAILED",
+                        "No audio over Wi-Fi. This network may block phone-to-phone traffic.",
+                    )
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "LAN audio failed", t)
+                if (!ended) finish("FAILED", "Wi-Fi audio failed: ${t.message ?: "port busy"}")
+            }
+        }
+    }
+
+    private fun startLanMic(sock: DatagramSocket, peerIp: String) {
+        val rec = buildRecord()
+        record = rec
+        rec.startRecording()
+        val target = runCatching { InetAddress.getByName(peerIp) }.getOrNull()
+        if (target == null) {
+            finish("FAILED", "Bad call address")
+            return
+        }
+        micThread = thread(name = "meshlink-call-lan-tx", isDaemon = true) {
+            val buffer = ByteArray(CHUNK_BYTES)
+            try {
+                while (!ended && !sock.isClosed) {
+                    val read = rec.read(buffer, 0, buffer.size)
+                    if (read <= 0) continue
+                    if (muted) continue
+                    runCatching {
+                        sock.send(DatagramPacket(buffer, read, target, AUDIO_PORT))
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "LAN mic failed", t)
+            }
+        }
+    }
+
+    private fun startLanReader(sock: DatagramSocket) {
+        readThread = thread(name = "meshlink-call-lan-rx", isDaemon = true) {
+            val buffer = ByteArray(MAX_FRAME)
+            var first = true
+            while (!ended && !sock.isClosed) {
+                try {
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    sock.receive(packet)
+                    if (packet.length > 0) {
+                        play(packet.data, packet.length)
+                        if (first) {
+                            first = false
+                            active = true
+                            _state.value = _state.value.copy(
+                                phase = CallPhase.ACTIVE,
+                                connectedAt = System.currentTimeMillis(),
+                                note = "",
+                            )
+                        }
+                    }
+                } catch (t: SocketTimeoutException) {
+                    // Keep waiting; the watchdog in openLanAudio decides.
+                } catch (t: Throwable) {
+                    if (!ended) Log.d(TAG, "LAN audio rx ended: ${t.message}")
+                    break
+                }
+            }
+        }
+    }
+
     private fun connectWithRetry(ownerIp: String?): Socket {
         if (ownerIp == null) throw IllegalStateException("No Wi-Fi Direct group")
         var last: Throwable? = null
@@ -315,7 +434,7 @@ object CallManager {
                     if (len <= 0 || len > MAX_FRAME) break
                     val data = ByteArray(len)
                     input.readFully(data, 0, len)
-                    play(data)
+                    play(data, len)
                 }
             } catch (t: Throwable) {
                 if (!ended) Log.d(TAG, "call rx ended: ${t.message}")
@@ -408,9 +527,9 @@ object CallManager {
         track = player
     }
 
-    private fun play(data: ByteArray) {
+    private fun play(data: ByteArray, length: Int = data.size) {
         val player = track ?: return
-        runCatching { player.write(data, 0, data.size) }
+        runCatching { player.write(data, 0, length) }
     }
 
     private fun prepareAudio() {
@@ -491,7 +610,7 @@ object CallManager {
                 name = s.name,
                 outgoing = s.outgoing,
                 missed = missed || (!s.outgoing && status != "COMPLETED"),
-                transport = "WIFI_DIRECT",
+                transport = if (s.transport == "Wi-Fi") "WIFI_LAN" else "WIFI_DIRECT",
                 timestamp = System.currentTimeMillis(),
                 durationSec = duration,
                 status = status,
@@ -519,9 +638,12 @@ object CallManager {
 
         runCatching { serverSocket?.close() }
         serverSocket = null
+        runCatching { udpSocket?.close() }
+        udpSocket = null
         runCatching { socket?.close() }
         socket = null
         output = null
+        peerAudioIp = null
 
         runCatching {
             track?.stop()

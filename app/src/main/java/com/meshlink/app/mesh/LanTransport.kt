@@ -100,6 +100,19 @@ class LanTransport(private val context: Context) {
         return ok
     }
 
+    /**
+     * This phone's IPv4 address on the Wi-Fi network, e.g. 192.168.1.23.
+     * Used to point a voice call's audio packets at the right phone.
+     */
+    @SuppressLint("MissingPermission")
+    fun localIp(): String? = runCatching {
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            ?: return@runCatching null
+        val ip = wifi.connectionInfo?.ipAddress ?: 0
+        if (ip == 0) null
+        else "${ip and 0xff}.${(ip shr 8) and 0xff}.${(ip shr 16) and 0xff}.${(ip shr 24) and 0xff}"
+    }.getOrNull()
+
     /** Phones heard on this network in the last two minutes. */
     fun peerCount(): Int {
         val now = System.currentTimeMillis()

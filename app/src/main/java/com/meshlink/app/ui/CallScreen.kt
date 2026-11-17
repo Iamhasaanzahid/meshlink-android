@@ -99,7 +99,7 @@ fun CallScreen(state: CallUiState) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Wi-Fi Direct · no internet",
+                    "${state.transport.ifBlank { "Wi-Fi" }} · direct, no server",
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 11.sp,
                 )

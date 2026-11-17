@@ -14,6 +14,8 @@ object MeshSettings {
     private const val PREFS = "meshlink_settings"
     private const val KEY_MAX_HOPS = "max_hops"
     private const val KEY_SMS_FALLBACK = "sms_fallback"
+    private const val KEY_ONLINE = "online_enabled"
+    private const val KEY_BROKER = "online_broker"
 
     const val DEFAULT_HOPS = 8
     const val MIN_HOPS = 1
@@ -41,4 +43,27 @@ object MeshSettings {
     fun setSmsFallback(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_SMS_FALLBACK, enabled).apply()
     }
+
+    /**
+     * Online mode carries messages over the internet (the "www") through an
+     * MQTT relay. Off by default: local radios are free and private, while
+     * online mode needs a network and a relay.
+     */
+    fun onlineEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ONLINE, false)
+
+    fun setOnlineEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ONLINE, enabled).apply()
+    }
+
+    /** Broker URL, e.g. ssl://broker.hivemq.com:8883. */
+    fun onlineBroker(context: Context): String =
+        prefs(context).getString(KEY_BROKER, DEFAULT_BROKER)
+            ?.takeIf { it.isNotBlank() } ?: DEFAULT_BROKER
+
+    fun setOnlineBroker(context: Context, url: String) {
+        prefs(context).edit().putString(KEY_BROKER, url.trim()).apply()
+    }
+
+    const val DEFAULT_BROKER = "ssl://broker.hivemq.com:8883"
 }

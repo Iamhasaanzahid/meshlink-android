@@ -49,6 +49,13 @@ fun SettingsScreen(
     myPhone: String,
     onSavePhone: (String) -> Unit,
     missingPermissions: Int,
+    missingTitles: List<String>,
+    onRequestPermissions: () -> Unit,
+    onlineEnabled: Boolean,
+    onlineConnected: Boolean,
+    onlineBroker: String,
+    onToggleOnline: (Boolean) -> Unit,
+    onSaveBroker: (String) -> Unit,
     onOpenSystemSettings: () -> Unit,
     smsFallback: Boolean,
     onToggleSmsFallback: (Boolean) -> Unit,
@@ -57,6 +64,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
 ) {
     var phoneDraft by remember(myPhone) { mutableStateOf(myPhone) }
+    var brokerDraft by remember(onlineBroker) { mutableStateOf(onlineBroker) }
 
     Column(
         modifier = Modifier
@@ -97,6 +105,65 @@ fun SettingsScreen(
                         "Offline identity · no account, no internet",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionTitle("Online mode (www)")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Worldwide messaging",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                        )
+                        Text(
+                            when {
+                                !onlineEnabled -> "Off · local radios only"
+                                onlineConnected -> "Connected · messages anywhere in the world"
+                                else -> "Connecting to the relay…"
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = onlineEnabled, onCheckedChange = onToggleOnline)
+                }
+                if (onlineEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = brokerDraft,
+                        onValueChange = { brokerDraft = it },
+                        label = { Text("Relay address") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { onSaveBroker(brokerDraft) }) { Text("Save relay") }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            if (onlineConnected) "live" else "offline",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "Default is a free public broker. Message bodies are encrypted " +
+                            "(AES-GCM) with a key derived from both IDs, so other listeners " +
+                            "on the broker cannot read them. This is not a verified " +
+                            "end-to-end key exchange yet, so avoid secrets on the public " +
+                            "relay. For privacy, run your own broker and paste its address " +
+                            "(ssl://host:8883).",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -369,19 +436,52 @@ fun SettingsScreen(
             }
         }
         if (missingPermissions > 0) {
-            TextButton(
-                onClick = onOpenSystemSettings,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Open Android settings to allow permissions") }
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "Allow these so messaging works",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    missingTitles.forEach { title ->
+                        Text(
+                            "•  $title",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = onRequestPermissions,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                    ) { Text("Allow now") }
+                    TextButton(
+                        onClick = onOpenSystemSettings,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("If nothing appears, open Android settings") }
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))
         SectionTitle("About")
         Text(
             "MeshLink ${BuildConfig.VERSION_NAME} · free software (GPL-3.0-or-later)\n" +
-                "Messages and calls use only the phone's own radios: " +
-                "Wi-Fi Direct, Bluetooth LE and the cellular radio (SMS). " +
-                "No servers, no tracking, no internet needed.",
+                "Messages and calls use the phone's own radios — Wi-Fi Direct, " +
+                "Wi-Fi LAN, Bluetooth LE and SMS. No account and no tracking. " +
+                "Online mode is optional, off by default, and only used when " +
+                "you switch it on.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

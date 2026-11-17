@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,6 +96,46 @@ fun HomeScreen(
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
     var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
     var smsFallback by remember { mutableStateOf(MeshSettings.smsFallback(context)) }
+    var missingPerms by remember { mutableStateOf(PermissionsHelper.missing(context)) }
+    var onlineEnabled by remember { mutableStateOf(MeshSettings.onlineEnabled(context)) }
+    var onlineBroker by remember { mutableStateOf(MeshSettings.onlineBroker(context)) }
+
+    // The permission list must refresh after the user answers an Android
+    // dialog or comes back from system settings, otherwise the Settings card
+    // keeps saying "missing" on some phones even after everything is granted.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                missingPerms = PermissionsHelper.missing(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val corePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        missingPerms = PermissionsHelper.missing(context)
+        if (missingPerms.isNotEmpty()) {
+            Toast.makeText(
+                context,
+                "Still missing ${missingPerms.size} permission(s). Tap Allow again, or open Android settings.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    fun requestCorePermissions() {
+        val missing = PermissionsHelper.missing(context)
+        missingPerms = missing
+        if (missing.isEmpty()) {
+            Toast.makeText(context, "All permissions are already allowed.", Toast.LENGTH_SHORT).show()
+        } else {
+            corePermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
 
     // SMS permission is requested only when the user switches SMS fallback on,
     // so first launch never shows Android's "SMS can cost money" warning.
@@ -146,7 +190,7 @@ fun HomeScreen(
 
     fun startCall(peer: String, name: String) {
         val mesh = engine
-        val overMesh = mesh != null && mesh.wifiHasGroup && CallManager.placeCall(peer, name)
+        val overMesh = mesh != null && CallManager.placeCall(peer, name)
         if (!overMesh) simFallback = peer to name
     }
 
@@ -174,7 +218,14 @@ fun HomeScreen(
                     title = {
                         Column {
                             Text("MeshLink", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("ID: $myUin · offline", fontSize = 11.sp)
+                            val presence = when {
+                                status["onlineConnected"] == true -> "online"
+                                (status["wifiLanPeers"] as? Int ?: 0) > 0 -> "nearby"
+                                status["wifiGroup"] == true -> "nearby"
+                                (status["blePeers"] as? Int ?: 0) > 0 -> "nearby"
+                                else -> "offline"
+                            }
+                            Text("ID: $myUin · $presence", fontSize = 11.sp)
                         }
                     },
                     actions = {
@@ -302,7 +353,24 @@ fun HomeScreen(
                             myPhone = it
                             SessionStore.savePhone(context, it)
                         },
-                        missingPermissions = PermissionsHelper.missing(context).size,
+                        missingPermissions = missingPerms.size,
+                        missingTitles = PermissionsHelper.core()
+                            .filter { !PermissionsHelper.granted(context, it.permission) }
+                            .map { it.title }
+                            .distinct(),
+                        onRequestPermissions = { requestCorePermissions() },
+                        onlineEnabled = onlineEnabled,
+                        onlineConnected = status["onlineConnected"] == true,
+                        onlineBroker = onlineBroker,
+                        onToggleOnline = { enabled ->
+                            onlineEnabled = enabled
+                            engine?.setOnlineMode(enabled)
+                        },
+                        onSaveBroker = { url ->
+                            onlineBroker = url
+                            MeshSettings.setOnlineBroker(context, url)
+                            engine?.restartOnline()
+                        },
                         smsFallback = smsFallback,
                         onToggleSmsFallback = { setSmsFallback(it) },
                         onOpenSystemSettings = {

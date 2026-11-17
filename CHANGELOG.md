@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.9.0 — 2026-11-17
+
+### Added
+- **Online mode (www).** Switch it on in Settings and messages can reach a
+  MeshLink phone anywhere in the world over Wi-Fi or mobile data, through an
+  MQTT relay. The default relay is a free public broker; the address is
+  editable if you run your own. Message frames are encrypted with AES-GCM
+  using a key derived from both UINs, so other listeners on the broker see
+  only ciphertext. Off by default.
+- **Calls over ordinary Wi-Fi.** A MeshLink call no longer needs a Wi-Fi
+  Direct group: both phones on the same router or hotspot exchange voice as
+  20 ms UDP packets. Call signalling now carries each phone's LAN address.
+  Wi-Fi Direct calls still work when there is no shared network.
+- **A permissions card that actually helps.** Settings lists every missing
+  permission by name with an *Allow now* button, and the list refreshes when
+  the app comes back to the foreground. A permanently denied permission has a
+  direct link to Android's app settings.
+- Online status is visible in Settings (connected / connecting / off).
+
+### Changed
+- The send order now prefers a radio that has actually heard the other phone
+  (Wi-Fi LAN, then Wi-Fi Direct, then BLE) before falling back to the rest, so
+  a nearby message does not wait on an empty radio.
+- `BLUETOOTH_SCAN` is declared `neverForLocation`, which lets Android 12+
+  phones scan without a location permission.
+- Call ids are shortened so the invite/accept frame fits in one 96-byte mesh
+  frame together with the LAN address.
+
+### Notes
+- Online mode is a convenience transport, not a replacement for a verified
+  end-to-end key exchange: the key comes from the two public UINs, and the
+  relay can be replaced by anyone who shares the address. Read the Security
+  section before using it for sensitive chats.
+- Photos and documents still travel only over local radios (Wi-Fi LAN,
+  Wi-Fi Direct, BLE); online file transfer is not implemented yet.
+- Calls over Wi-Fi need the network to allow phone-to-phone traffic. Public
+  Wi-Fi with client isolation will refuse it, and the call screen says so.
+
 ## 1.8.0 — 2026-11-16
 
 ### Added
