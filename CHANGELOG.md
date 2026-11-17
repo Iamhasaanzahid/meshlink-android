@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.8.0 — 2026-11-16
+
+### Added
+- **Photos and documents in chats.** The paperclip button opens a menu with
+  *Photo from gallery*, *Take photo* and *Document*. Photos are rotated from
+  their EXIF orientation, scaled to 1024 px and compressed to JPEG so they fit
+  through the radios; documents are copied into app storage and shown as a
+  card with name and size. Tap a photo for a full-screen view, tap a document
+  to open it in whatever viewer the phone has.
+- **A file-transfer layer for the mesh** (`FileTransfer` + two new frame
+  types). Files are split into 90-byte chunks, reassembled out of order on the
+  other phone, saved privately and acknowledged so the sender gets double
+  ticks. Progress is shown live in the bubble ("Sending 42%").
+- Files use Wi-Fi LAN, then Wi-Fi Direct, then Bluetooth LE — never SMS, and
+  they are capped at 3 MB. A phone photo is usually 150–350 KB, so it travels
+  in seconds over Wi-Fi and about a minute over Bluetooth.
+- Eight new unit tests for chunk splitting and reassembly, including
+  out-of-order and duplicate chunks.
+
+### Notes
+- Large files over Bluetooth LE are slow by nature. Wi-Fi Direct or a shared
+  Wi-Fi network is the right tool for photos.
+- Photo and document payloads are *not* end-to-end encrypted yet, exactly like
+  text messages today (see the Security section of the README). Online calls
+  are encrypted with DTLS-SRTP.
+
 ## 1.7.0 — 2026-11-16
 
 ### Added

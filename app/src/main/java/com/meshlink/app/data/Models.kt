@@ -14,6 +14,9 @@ enum class MsgStatus {
     FAILED,
 }
 
+/** What a message carries: plain text, a photo, any file, or a voice note. */
+enum class MsgKind { TEXT, IMAGE, DOCUMENT, AUDIO }
+
 /** One message inside a conversation. */
 data class Message(
     val id: String,
@@ -23,6 +26,11 @@ data class Message(
     val timestamp: Long,
     val transport: String,
     val status: MsgStatus,
+    val kind: MsgKind = MsgKind.TEXT,
+    val mediaPath: String? = null,
+    val mediaMime: String = "",
+    val mediaName: String = "",
+    val mediaSize: Long = 0,
 )
 
 /** A conversation row in the chat list. */

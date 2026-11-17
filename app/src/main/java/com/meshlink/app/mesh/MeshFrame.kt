@@ -36,6 +36,12 @@ object MeshFrame {
     /** Call signalling (invite / accept / reject / end). */
     const val TYPE_CALL: Byte = 0x06
 
+    /** Start of a file transfer: name, mime, size, chunk count. */
+    const val TYPE_FILE_META: Byte = 0x07
+
+    /** One piece of a file: 4-byte transfer id, 2-byte index, then data. */
+    const val TYPE_FILE_CHUNK: Byte = 0x08
+
     const val DEFAULT_TTL = 5
 
     data class Frame(

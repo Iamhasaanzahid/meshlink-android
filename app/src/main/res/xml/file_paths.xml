@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Photos and documents saved by MeshLink (sent and received). -->
+    <files-path name="media" path="media/" />
+    <!-- Temporary file written by the camera app. -->
+    <cache-path name="camera" path="camera/" />
+</paths>

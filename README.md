@@ -25,6 +25,10 @@ crowd, a building or a village where the network is down.
   Voice is streamed directly between the two phones over Wi-Fi Direct.
   If the two phones are not in a Wi-Fi Direct group, the app offers a normal
   SIM call instead.
+- **Photos and documents** — send a picture from the gallery, take a new one,
+  or attach any document. Photos are auto-rotated and compressed; tap to view
+  full screen, tap a document to open it. Transfers use Wi-Fi LAN → Wi-Fi
+  Direct → Bluetooth LE (never SMS) and show live progress.
 - **Call log** — incoming, outgoing and missed calls with duration.
 - **Contacts** — saved on the device, one tap to chat or call.
 - **Radio status** — live state of all three radios and one-tap pairing with
@@ -102,6 +106,17 @@ handy when networks are down, not a replacement for a secure messenger.
 
 MeshLink collects no data at all. See [PRIVACY.md](PRIVACY.md) for the full
 permission and storage breakdown.
+
+## Photos and documents
+
+Tap the paperclip in a chat. Photos are scaled to 1024 px and re-compressed
+(usually 150–350 KB), documents are copied into the app's private storage, and
+both are capped at 3 MB. The transfer is split into 90-byte mesh chunks and
+reassembled on the other phone, so a dropped chunk only costs that chunk.
+
+Wi-Fi Direct or the same Wi-Fi network is the right path for photos; Bluetooth
+LE works but is slow (a photo can take about a minute). SMS is never used for
+files. Like text messages, file payloads are not end-to-end encrypted yet.
 
 ## Online calls (internet)
 

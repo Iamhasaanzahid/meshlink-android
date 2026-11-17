@@ -62,6 +62,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Shares saved photos/documents with the viewer app the user picks -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Keeps all radios alive in the background -->
         <service
             android:name=".service.MeshService"

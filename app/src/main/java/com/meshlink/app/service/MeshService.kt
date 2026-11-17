@@ -76,6 +76,11 @@ class MeshService : Service() {
             ChatRepository.onIncoming(from, id, body, transport.name, senderName, senderPhone)
         }
         mesh.onAckFor = { id -> ChatRepository.onDelivered(id) }
+        mesh.onFileForMe = { from, id, name, mime, path, size, transport, senderName ->
+            ChatRepository.onIncomingFile(
+                from, id, name, mime, path, size, transport.name, senderName,
+            )
+        }
 
         CallManager.attach(this, mesh)
         OnlineCallManager.attach(this)

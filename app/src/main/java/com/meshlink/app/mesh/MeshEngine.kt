@@ -71,6 +71,11 @@ class MeshEngine(private val context: Context) {
     /** The receiving phone confirmed delivery of [messageId]. */
     var onAckFor: ((messageId: String) -> Unit)? = null
 
+    /** A complete file (photo / document) arrived and is addressed to us. */
+    var onFileForMe:
+        ((from: String, messageId: String, name: String, mime: String, path: String,
+          size: Long, transport: TransportType, senderName: String) -> Unit)? = null
+
     /** Call signalling: action = invite / accept / reject / end. */
     var onControl: ((from: String, action: String, callId: String, name: String) -> Unit)? = null
 
@@ -83,6 +88,20 @@ class MeshEngine(private val context: Context) {
 
     private val segments = HashMap<String, SegBuffer>()
     private val segmentLock = Any()
+
+    private class IncomingFile(
+        val messageId: String,
+        val name: String,
+        val mime: String,
+        val size: Long,
+        val senderUin: String,
+        val assembler: FileTransfer.Assembler,
+    ) {
+        val updatedAt = System.currentTimeMillis()
+    }
+
+    private val incomingFiles = HashMap<String, IncomingFile>()
+    private val fileLock = Any()
 
     private class SegBuffer(val total: Int) {
         val parts = arrayOfNulls<ByteArray>(total)
@@ -334,6 +353,197 @@ class MeshEngine(private val context: Context) {
         return sendFrames(destination, listOf(frame))
     }
 
+    // ------------------------------------------------------------- file send
+
+    /**
+     * Sends a photo, document or voice note. Files are never sent by SMS
+     * (they are far too large) and the whole transfer sticks to one radio; the
+     * receiver reassembles the chunks even if they arrive out of order.
+     *
+     * Returns true when every chunk was handed to a radio.
+     */
+    fun sendFile(
+        destination: String,
+        messageId: String,
+        fileName: String,
+        mime: String,
+        data: ByteArray,
+        onProgress: ((Int) -> Unit)? = null,
+    ): Boolean {
+        val target = destination.trim()
+        if (target.isEmpty()) return false
+
+        val chunks = FileTransfer.split(data)
+        val transferId = MessageDigest.getInstance("SHA-256")
+            .digest(messageId.toByteArray(Charsets.UTF_8))
+            .copyOfRange(0, 4)
+        val idHex = transferId.joinToString("") { "%02x".format(it) }
+
+        val meta = runCatching {
+            JSONObject()
+                .put("i", idHex)
+                .put("n", safeFileName(fileName).take(12))
+                .put("m", mime.take(16))
+                .put("s", data.size.toLong())
+                .put("c", chunks.size)
+                .put("u", localUin)
+                .toString()
+                .toByteArray(Charsets.UTF_8)
+        }.getOrNull() ?: return false
+        if (meta.size > MeshFrame.MAX_PAYLOAD) return false
+
+        val destNode = MeshFrame.nodeId16(target)
+        val metaFrame = MeshFrame.Frame(
+            type = MeshFrame.TYPE_FILE_META,
+            sourceNodeId = localNodeId,
+            destNodeId = destNode,
+            ttl = hops(),
+            payload = meta,
+        ).serialize()
+
+        val send: (ByteArray) -> Boolean = pickFileRadio()
+        if (!send(metaFrame)) return false
+
+        val totalFrames = chunks.size + 1
+        var sent = 1
+        var lastReported = 0
+        for ((index, chunk) in chunks.withIndex()) {
+            val payload = ByteArray(6 + chunk.size)
+            transferId.copyInto(payload, 0)
+            payload[4] = ((index shr 8) and 0xFF).toByte()
+            payload[5] = (index and 0xFF).toByte()
+            chunk.copyInto(payload, 6)
+
+            val frame = MeshFrame.Frame(
+                type = MeshFrame.TYPE_FILE_CHUNK,
+                sourceNodeId = localNodeId,
+                destNodeId = destNode,
+                ttl = hops(),
+                payload = payload,
+            ).serialize()
+            if (!send(frame)) return false
+            sent++
+            // Pace the burst a little: a 300 KB photo is ~3,400 frames and
+            // flooding the receiver's UDP buffer would lose chunks.
+            if (sent % 8 == 0) Thread.sleep(2)
+            val percent = sent * 100 / totalFrames
+            if (percent > lastReported) {
+                lastReported = percent
+                onProgress?.invoke(percent)
+            }
+        }
+        onProgress?.invoke(100)
+        return true
+    }
+
+    /**
+     * Picks one radio for a whole file. Wi-Fi LAN first (fast, reliable),
+     * then Wi-Fi Direct (only if a group exists), then Bluetooth LE with a
+     * short pause per frame so the GATT queue can keep up.
+     */
+    private fun pickFileRadio(): (ByteArray) -> Boolean {
+        val sendLan: (ByteArray) -> Boolean =
+            { frame -> runCatching { lan.send(frame) }.getOrDefault(false) }
+        val sendWifi: (ByteArray) -> Boolean =
+            { frame -> runCatching { wifi.send(frame) }.getOrDefault(false) }
+        val sendBle: (ByteArray) -> Boolean = { frame ->
+            var ok = false
+            repeat(3) {
+                if (!ok) {
+                    ok = runCatching { ble.send(null, frame) > 0 }.getOrDefault(false)
+                    if (!ok) Thread.sleep(15)
+                }
+            }
+            if (ok) Thread.sleep(10)
+            ok
+        }
+
+        // Prefer a radio that has actually heard the other side. A Wi-Fi LAN
+        // broadcast "succeeds" even when nobody is listening, so require at
+        // least one recently heard peer.
+        if (lanActive && lan.peerCount() > 0) return sendLan
+        if (wifiActive && wifi.hasGroup) return sendWifi
+        if (bleActive && ble.connectedPeerCount > 0) return sendBle
+
+        if (lanActive) return sendLan
+        if (bleActive) return sendBle
+        if (wifiActive) return sendWifi
+        return { false }
+    }
+
+    fun isFileCapable(): Boolean = lanActive || bleActive || wifiActive
+
+    private fun safeFileName(name: String): String =
+        name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "file" }
+
+    private fun handleFileMeta(from: String, payload: ByteArray, transport: TransportType) {
+        val json = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull() ?: return
+        val id = json.optString("i", "")
+        val total = json.optInt("c", 0)
+        if (id.length != 8 || total <= 0 || total > 40_000) return
+
+        synchronized(fileLock) {
+            purgeFiles()
+            val key = "$from|$id"
+            // A relayed duplicate of the start frame must not reset progress.
+            if (incomingFiles.containsKey(key)) return
+            incomingFiles[key] = IncomingFile(
+                messageId = id,
+                name = safeFileName(json.optString("n", "file")),
+                mime = json.optString("m", "application/octet-stream"),
+                size = json.optLong("s", 0),
+                senderUin = json.optString("u", ""),
+                assembler = FileTransfer.Assembler(total),
+            )
+        }
+    }
+
+    private fun handleFileChunk(from: String, payload: ByteArray, transport: TransportType) {
+        if (payload.size < 6) return
+        val id = payload.copyOfRange(0, 4).joinToString("") { "%02x".format(it) }
+        val index = ((payload[4].toInt() and 0xFF) shl 8) or (payload[5].toInt() and 0xFF)
+        val data = payload.copyOfRange(6, payload.size)
+
+        var complete: IncomingFile? = null
+        synchronized(fileLock) {
+            purgeFiles()
+            val file = incomingFiles["$from|$id"] ?: return
+            if (file.assembler.put(index, data)) {
+                incomingFiles.remove("$from|$id")
+                complete = file
+            }
+        }
+        complete?.let { finishFile(from, it, transport) }
+    }
+
+    private fun finishFile(from: String, file: IncomingFile, transport: TransportType) {
+        runCatching {
+            val dir = java.io.File(context.filesDir, "media").apply { mkdirs() }
+            val extension = file.name.substringAfterLast('.', "").take(8)
+            val out = java.io.File(
+                dir,
+                file.messageId + if (extension.isNotBlank()) ".$extension" else "",
+            )
+            out.writeBytes(file.assembler.join())
+            // Prefer the sender's UIN so the reply lands on that phone even
+            // when the last hop was a relay.
+            val sender = file.senderUin.ifBlank { from }
+            onFileForMe?.invoke(
+                sender, file.messageId, file.name, file.mime, out.absolutePath,
+                out.length(), transport, file.senderUin,
+            )
+            sendAck(sender, file.messageId)
+        }.onFailure { Log.w(TAG, "could not save incoming file", it) }
+    }
+
+    private fun purgeFiles() {
+        val now = System.currentTimeMillis()
+        val it = incomingFiles.entries.iterator()
+        while (it.hasNext()) {
+            if (now - it.next().value.updatedAt > 3 * 60 * 1000L) it.remove()
+        }
+    }
+
     // --------------------------------------------------------------- receiving
 
     private fun handleIncoming(fromAddress: String, transport: TransportType, bytes: ByteArray) {
@@ -367,6 +577,8 @@ class MeshEngine(private val context: Context) {
                     if (id.isNotEmpty()) onAckFor?.invoke(id)
                 }
                 MeshFrame.TYPE_CALL -> handleControl(fromAddress, frame.payload)
+                MeshFrame.TYPE_FILE_META -> handleFileMeta(fromAddress, frame.payload, transport)
+                MeshFrame.TYPE_FILE_CHUNK -> handleFileChunk(fromAddress, frame.payload, transport)
                 else -> Unit
             }
             return

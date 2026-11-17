@@ -21,6 +21,7 @@ import java.util.UUID
 object ChatRepository {
 
     private const val COLORS_COUNT = 8
+    private const val MAX_MEDIA_BYTES = 3L * 1024 * 1024
 
     private lateinit var db: MeshDatabase
     @Volatile
@@ -41,6 +42,10 @@ object ChatRepository {
 
     private val messageFlows = HashMap<String, MutableStateFlow<List<Message>>>()
     private val messageLock = Any()
+
+    /** Upload progress for photos / documents, keyed by message id (0..100). */
+    private val _transferProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val transferProgress: StateFlow<Map<String, Int>> = _transferProgress.asStateFlow()
 
     /** Fired for every message that arrives while the app is in the background. */
     @Volatile
@@ -111,7 +116,7 @@ object ChatRepository {
     private fun readMessages(chatId: String): List<Message> {
         val list = ArrayList<Message>()
         val c = db.readableDatabase.rawQuery(
-            "SELECT id, chat_id, from_me, body, ts, transport, status FROM messages " +
+            "SELECT id, chat_id, from_me, body, ts, transport, status, kind, media_path, media_mime, media_name, media_size FROM messages " +
                 "WHERE chat_id = ? ORDER BY ts ASC",
             arrayOf(chatId),
         )
@@ -126,6 +131,12 @@ object ChatRepository {
                     transport = it.getString(5),
                     status = runCatching { MsgStatus.valueOf(it.getString(6)) }
                         .getOrDefault(MsgStatus.SENT),
+                    kind = runCatching { MsgKind.valueOf(it.getString(7)) }
+                        .getOrDefault(MsgKind.TEXT),
+                    mediaPath = it.getString(8),
+                    mediaMime = it.getString(9),
+                    mediaName = it.getString(10),
+                    mediaSize = it.getLong(11),
                 )
             }
         }
@@ -164,6 +175,56 @@ object ChatRepository {
         return msg
     }
 
+    /**
+     * Queue a photo, document or voice note.
+     *
+     * [file] must already live in app storage (the picker copies it there), so
+     * the message keeps working after the original content URI is gone.
+     * Files larger than 3 MB are refused: the mesh radios cannot carry them in
+     * a reasonable time and the receiver caps reassembly at 3.6 MB.
+     */
+    fun sendMedia(
+        peer: String,
+        file: java.io.File,
+        kind: MsgKind,
+        mime: String,
+        displayName: String,
+        contactName: String = "",
+    ): Message? {
+        val target = peer.trim()
+        if (target.isEmpty() || !file.exists() || file.length() > MAX_MEDIA_BYTES) return null
+
+        val preview = previewFor(kind, displayName)
+        val msg = Message(
+            id = UUID.randomUUID().toString(),
+            chatId = target,
+            fromMe = true,
+            body = preview,
+            timestamp = System.currentTimeMillis(),
+            transport = "AUTO",
+            status = MsgStatus.SENDING,
+            kind = kind,
+            mediaPath = file.absolutePath,
+            mediaMime = mime,
+            mediaName = displayName,
+            mediaSize = file.length(),
+        )
+        scope.launch {
+            insertMessage(msg)
+            touchChat(target, resolveName(target, contactName), preview, msg.timestamp, "AUTO", 0)
+            refreshMessages(target)
+            refreshChats()
+            dispatchMedia(msg)
+        }
+        return msg
+    }
+
+    private fun previewFor(kind: MsgKind, name: String): String = when (kind) {
+        MsgKind.IMAGE -> "📷 Photo"
+        MsgKind.AUDIO -> "🎤 Voice message"
+        else -> "📄 $name"
+    }
+
     /** Re-queue a failed message. */
     fun retry(message: Message) {
         scope.launch {
@@ -196,10 +257,12 @@ object ChatRepository {
             val pending = ArrayList<Message>()
             val since = System.currentTimeMillis() - 1000L * 60 * 60 * 24
             db.readableDatabase.rawQuery(
-                "SELECT id, chat_id, body, ts FROM messages " +
-                    "WHERE from_me = 1 AND status IN (?, ?) AND ts >= ? " +
+                "SELECT id, chat_id, body, ts, kind, media_path, media_mime, media_name, media_size " +
+                    "FROM messages " +
+                    "WHERE from_me = 1 AND ts >= ? AND " +
+                    "(status = ? OR (status = ? AND kind = 'TEXT')) " +
                     "ORDER BY ts LIMIT 30",
-                arrayOf(MsgStatus.FAILED.name, MsgStatus.SENT.name, since.toString()),
+                arrayOf(since.toString(), MsgStatus.FAILED.name, MsgStatus.SENT.name),
             ).use { c ->
                 while (c.moveToNext()) {
                     pending += Message(
@@ -210,6 +273,12 @@ object ChatRepository {
                         timestamp = c.getLong(3),
                         transport = "AUTO",
                         status = MsgStatus.SENT,
+                        kind = runCatching { MsgKind.valueOf(c.getString(4)) }
+                            .getOrDefault(MsgKind.TEXT),
+                        mediaPath = c.getString(5),
+                        mediaMime = c.getString(6) ?: "",
+                        mediaName = c.getString(7) ?: "",
+                        mediaSize = c.getLong(8),
                     )
                 }
             }
@@ -236,6 +305,10 @@ object ChatRepository {
     }
 
     private fun dispatch(message: Message, allowSms: Boolean = true) {
+        if (message.kind != MsgKind.TEXT) {
+            dispatchMedia(message)
+            return
+        }
         val engine = MeshService.engine
         val displayName = appContext?.let { SessionStore.displayName(it) } ?: ""
         val ok = engine?.sendMessage(
@@ -251,6 +324,48 @@ object ChatRepository {
         updateStatus(message.id, status)
         refreshMessages(message.chatId)
         refreshChats()
+    }
+
+    /**
+     * Streams a photo / document over the mesh. Files never use SMS (the cost
+     * would be absurd) and progress is published per message so the bubble can
+     * show "Sending 42%".
+     */
+    private fun dispatchMedia(message: Message) {
+        val engine = MeshService.engine
+        val path = message.mediaPath
+        if (engine == null || path == null) {
+            updateStatus(message.id, MsgStatus.FAILED)
+            refreshMessages(message.chatId)
+            return
+        }
+
+        scope.launch {
+            val bytes = runCatching { java.io.File(path).readBytes() }.getOrNull()
+            if (bytes == null || bytes.isEmpty()) {
+                updateStatus(message.id, MsgStatus.FAILED)
+                refreshMessages(message.chatId)
+                refreshChats()
+                return@launch
+            }
+
+            val ok = runCatching {
+                engine.sendFile(
+                    destination = message.chatId,
+                    messageId = message.id,
+                    fileName = message.mediaName,
+                    mime = message.mediaMime,
+                    data = bytes,
+                ) { percent ->
+                    _transferProgress.value = _transferProgress.value + (message.id to percent)
+                }
+            }.getOrDefault(false)
+
+            _transferProgress.value = _transferProgress.value - message.id
+            updateStatus(message.id, if (ok) MsgStatus.SENT else MsgStatus.FAILED)
+            refreshMessages(message.chatId)
+            refreshChats()
+        }
     }
 
     /** Called by the mesh when a message arrives. */
@@ -283,6 +398,54 @@ object ChatRepository {
             if (senderPhone.isNotBlank() && senderPhone != peer) {
                 savePhoneAlias(peer, senderPhone)
             }
+            refreshMessages(peer)
+            refreshChats()
+            val chat = _chats.value.firstOrNull { it.peer == peer }
+            if (chat != null) onNewMessage?.invoke(msg, chat)
+        }
+    }
+
+    /**
+     * Called by the mesh when a complete file (photo or document) has been
+     * reassembled and saved. [path] points at app-private storage.
+     */
+    fun onIncomingFile(
+        from: String,
+        messageId: String,
+        name: String,
+        mime: String,
+        path: String,
+        size: Long,
+        transport: String,
+        senderName: String,
+    ) {
+        val peer = from.trim()
+        if (peer.isEmpty() || messageId.isEmpty()) return
+        if (exists(messageId)) return
+
+        val kind = when {
+            mime.startsWith("image/") -> MsgKind.IMAGE
+            mime.startsWith("audio/") -> MsgKind.AUDIO
+            else -> MsgKind.DOCUMENT
+        }
+        val preview = previewFor(kind, name)
+        val msg = Message(
+            id = messageId,
+            chatId = peer,
+            fromMe = false,
+            body = preview,
+            timestamp = System.currentTimeMillis(),
+            transport = transport,
+            status = MsgStatus.RECEIVED,
+            kind = kind,
+            mediaPath = path,
+            mediaMime = mime,
+            mediaName = name,
+            mediaSize = size,
+        )
+        scope.launch {
+            insertMessage(msg)
+            touchChat(peer, resolveName(peer, senderName), preview, msg.timestamp, transport, 1)
             refreshMessages(peer)
             refreshChats()
             val chat = _chats.value.firstOrNull { it.peer == peer }
@@ -337,6 +500,11 @@ object ChatRepository {
                 "ts" to msg.timestamp,
                 "transport" to msg.transport,
                 "status" to msg.status.name,
+                "kind" to msg.kind.name,
+                "media_path" to msg.mediaPath,
+                "media_mime" to msg.mediaMime,
+                "media_name" to msg.mediaName,
+                "media_size" to msg.mediaSize,
             ),
             android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE,
         )
@@ -362,16 +530,19 @@ object ChatRepository {
         unreadDelta: Int,
     ) {
         val w = db.writableDatabase
+        // Never replace a real saved name with the peer's UIN just because a
+        // later frame (e.g. a photo) did not carry a display name.
+        val displayName = name.trim().takeIf { it.isNotEmpty() && it != peer } ?: ""
         w.execSQL(
             "INSERT OR IGNORE INTO chats(peer, name, last_message, last_ts, unread, last_transport) " +
                 "VALUES(?,?,?,?,0,?)",
-            arrayOf(peer, name, body, ts, transport),
+            arrayOf(peer, displayName.ifEmpty { peer }, body, ts, transport),
         )
         w.execSQL(
             "UPDATE chats SET last_message = ?, last_ts = ?, last_transport = ?, " +
                 "unread = MAX(0, unread + ?), name = CASE WHEN ? = '' THEN name ELSE ? END " +
                 "WHERE peer = ?",
-            arrayOf(body, ts, transport, unreadDelta, name, name, peer),
+            arrayOf(body, ts, transport, unreadDelta, displayName, displayName, peer),
         )
     }
 
