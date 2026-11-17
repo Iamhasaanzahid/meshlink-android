@@ -44,14 +44,14 @@ RepoType: git
 Repo: https://github.com/Iamhasaanzahid/meshlink-android
 
 Builds:
-  - versionName: 1.7.0
-    versionCode: 9
-    commit: 9e5027539bbacad49abb5995cce984dd6c58eb63
+  - versionName: 1.8.0
+    versionCode: 10
+    commit: ed1604a9faad78194343e9ae9b94d9bc4ddad028
     output: app/build/outputs/apk/release/*.apk
     gradle:
       - yes
 
 AutoUpdateMode: Version v%v
 UpdateCheckMode: Tags
-CurrentVersion: 1.7.0
-CurrentVersionCode: 9
+CurrentVersion: 1.8.0
+CurrentVersionCode: 10
