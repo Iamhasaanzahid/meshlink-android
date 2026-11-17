@@ -33,8 +33,10 @@ Description: |
 
   * WhatsApp-style chat list, conversations, calls, contacts and settings
   * Message delivery status and tap-to-retry
-  * Free voice calls over Wi-Fi Direct with ring, accept, mute, speaker and
-    hang up, plus a call log
+  * Free voice calls over Wi-Fi Direct or a shared Wi-Fi network, with ring,
+    accept, mute, speaker and hang up, plus a call log
+  * Optional online mode (off by default) that carries messages worldwide
+    through an MQTT relay, with AES-GCM payload encryption
   * A normal SIM call fallback when the phones are not paired
   * Identity created on the device; no server, no account, no tracking
 
@@ -44,14 +46,14 @@ RepoType: git
 Repo: https://github.com/Iamhasaanzahid/meshlink-android
 
 Builds:
-  - versionName: 1.8.0
-    versionCode: 10
-    commit: ed1604a9faad78194343e9ae9b94d9bc4ddad028
+  - versionName: 1.9.0
+    versionCode: 11
+    commit: 509b72641a819a96c479d5bb65e2bbcbbc34392a
     output: app/build/outputs/apk/release/*.apk
     gradle:
       - yes
 
 AutoUpdateMode: Version v%v
 UpdateCheckMode: Tags
-CurrentVersion: 1.8.0
-CurrentVersionCode: 10
+CurrentVersion: 1.9.0
+CurrentVersionCode: 11
