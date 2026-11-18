@@ -39,6 +39,36 @@ class OnlineTransport(private val context: Context) {
     /** A decrypted frame arrived from [fromUin]. */
     var onFrame: ((fromUin: String, bytes: ByteArray) -> Unit)? = null
 
+    /**
+     * A frame for a phone near us arrived from a far sender. We have
+     * internet, that phone does not, so hand it over on the local radios.
+     */
+    var onRelayFor: ((receiverUin: String, senderUin: String, bytes: ByteArray) -> Unit)? = null
+
+    /** Nearby UINs whose relay topics we watch (so replies can reach them). */
+    private val relaySubs = LinkedHashSet<String>()
+
+    /**
+     * Subscribes to [nearbyUin]'s topic. Called for phones we actually heard
+     * on a local radio, so we never watch the whole world.
+     */
+    fun watchUin(nearbyUin: String) {
+        val u = nearbyUin.trim().uppercase()
+        if (!u.startsWith("OFF-") || u == uin) return
+        val added = synchronized(relaySubs) {
+            if (relaySubs.size >= 24) false else relaySubs.add(u)
+        }
+        if (!added) return
+        if (!isConnected) return
+        runCatching { client?.subscribe("$TOPIC_ROOT/$u/#", 0) }
+    }
+
+    private fun resubscribe(c: MqttClient) {
+        runCatching { c.subscribe("$TOPIC_ROOT/$uin/#", 0) }
+        val watched = synchronized(relaySubs) { relaySubs.toList() }
+        for (u in watched) runCatching { c.subscribe("$TOPIC_ROOT/$u/#", 0) }
+    }
+
     @Volatile
     var isConnected: Boolean = false
         private set
@@ -128,7 +158,7 @@ class OnlineTransport(private val context: Context) {
                         if (stopped) return
                         isConnected = true
                         // cleanSession=true drops subscriptions on reconnect.
-                        runCatching { c?.subscribe("$TOPIC_ROOT/$me/#", 0) }
+                        c?.let { resubscribe(it) }
                         Log.i(TAG, "connected to $serverURI (reconnect=$reconnect)")
                     }
 
@@ -153,7 +183,7 @@ class OnlineTransport(private val context: Context) {
                 if (stopped) break
                 client = c
                 isConnected = true
-                runCatching { c.subscribe("$TOPIC_ROOT/$me/#", 0) }
+                resubscribe(c)
                 Log.i(TAG, "online mode ready on $brokerUrl as $me")
                 // Stay here until the socket drops or the user switches off.
                 while (!stopped && c.isConnected) Thread.sleep(500)

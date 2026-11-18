@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.11.0 — 2026-11-18
+
+### Added
+- **Mesh → internet bridge (country-wide offline messaging).** Every text
+  message now also travels as a compact "bridge" frame that names the
+  destination UIN. Any MeshLink phone that sees it and has mobile data
+  forwards it to the relay, so an offline sender can reach a contact anywhere
+  in the country through a nearby phone with internet. No setup, no accounts.
+- **Reverse gateway.** When a phone with internet hears an offline phone on
+  Bluetooth/Wi-Fi, it subscribes to that phone's relay topic and hands its
+  incoming messages back over the local radios. Two-way chat works even when
+  only one side has data.
+- Duplicate protection now collapses copies that arrive over both the mesh
+  and an internet bridge.
+
+### Notes
+- Honest limits: a bridge needs at least one phone in the chain to have
+  internet at some point. With no internet anywhere, messages still travel
+  only hop-by-hop (Bluetooth 10–50 m, Wi-Fi Direct 50–200 m) or by the
+  optional paid SMS fallback. Phones still cannot transmit FM.
+- Bridge frames enlarge the radio traffic a little (text only, never files).
+
 ## 1.10.1 — 2026-11-18
 
 ### Fixed

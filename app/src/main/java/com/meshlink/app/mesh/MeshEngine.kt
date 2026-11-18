@@ -281,9 +281,33 @@ class MeshEngine(private val context: Context) {
         if (me.isBlank()) return
         val t = online ?: OnlineTransport(context).also {
             it.onFrame = { from, bytes -> handleIncoming(from, TransportType.ONLINE, bytes) }
+            it.onRelayFor = { receiver, sender, bytes ->
+                relayToMesh(receiver, sender, bytes)
+            }
             online = it
         }
         t.start(me, MeshSettings.onlineBroker(context))
+    }
+
+    /**
+     * A message for a phone that is near us came down from the relay. Put it
+     * back on the local radios so that phone (which has no internet) gets it.
+     */
+    private fun relayToMesh(receiver: String, sender: String, bytes: ByteArray) {
+        if (receiver.equals(localUin, ignoreCase = true)) return
+        if (!heardRecently(receiver)) return
+        val frame = MeshFrame.deserialize(bytes) ?: return
+        if (frame.type == MeshFrame.TYPE_FILE_META || frame.type == MeshFrame.TYPE_FILE_CHUNK) return
+        if (frame.type == MeshFrame.TYPE_BRIDGE) {
+            val dest = BridgeFrames.parse(frame.payload)?.destination
+            if (dest == null || !dest.equals(receiver, ignoreCase = true)) return
+        }
+        runCatching {
+            if (lanActive) lan.send(bytes)
+            if (wifiActive) wifi.send(bytes)
+            if (bleActive) ble.send(null, bytes)
+        }
+        Log.i(TAG, "bridged online message for $receiver from $sender onto local radios")
     }
 
     private fun publishOnline(destination: String, frames: List<ByteArray>): Boolean {
@@ -335,11 +359,13 @@ class MeshEngine(private val context: Context) {
     ): Boolean {
         val target = destination.trim()
         if (target.isEmpty() || body.isEmpty()) return false
-        val frames = runCatching { buildFrames(target, messageId, body, senderName) }
-            .getOrElse {
-                Log.w(TAG, "cannot build frames", it)
-                return false
-            }
+        val frames = runCatching {
+            buildFrames(target, messageId, body, senderName) +
+                buildBridgeFrames(target, messageId, body, senderName)
+        }.getOrElse {
+            Log.w(TAG, "cannot build frames", it)
+            return false
+        }
         return sendFrames(target, frames, allowSms, smsNumber)
     }
 
@@ -413,14 +439,9 @@ class MeshEngine(private val context: Context) {
         return ok
     }
 
-    private fun buildFrames(
-        destination: String,
-        messageId: String,
-        body: String,
-        senderName: String,
-    ): List<ByteArray> {
+    private fun messageJson(messageId: String, body: String, senderName: String): ByteArray {
         val myPhone = com.meshlink.app.data.SessionStore.phone(context)
-        val json = JSONObject()
+        return JSONObject()
             .put("i", messageId)
             .put("b", body)
             .put("n", senderName)
@@ -428,7 +449,43 @@ class MeshEngine(private val context: Context) {
             .put("t", System.currentTimeMillis())
             .apply { if (myPhone.isNotBlank()) put("p", myPhone) }
             .toString()
-        val payload = json.toByteArray(Charsets.UTF_8)
+            .toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * Extra copies of a text message that carry the destination UIN, so any
+     * MeshLink phone with internet that sees them can forward them to the
+     * worldwide relay (and from there to the destination's own phone).
+     */
+    private fun buildBridgeFrames(
+        destination: String,
+        messageId: String,
+        body: String,
+        senderName: String,
+    ): List<ByteArray> {
+        val payloads = runCatching {
+            BridgeFrames.payloads(destination, messageId, messageJson(messageId, body, senderName))
+        }.getOrDefault(emptyList())
+        if (payloads.isEmpty()) return emptyList()
+        val destNode = MeshFrame.nodeId16(destination)
+        return payloads.map { payload ->
+            MeshFrame.Frame(
+                type = MeshFrame.TYPE_BRIDGE,
+                sourceNodeId = localNodeId,
+                destNodeId = destNode,
+                ttl = hops(),
+                payload = payload,
+            ).serialize()
+        }
+    }
+
+    private fun buildFrames(
+        destination: String,
+        messageId: String,
+        body: String,
+        senderName: String,
+    ): List<ByteArray> {
+        val payload = messageJson(messageId, body, senderName)
         val destNode = MeshFrame.nodeId16(destination)
 
         if (payload.size <= MeshFrame.MAX_PAYLOAD) {
@@ -895,9 +952,20 @@ class MeshEngine(private val context: Context) {
                 MeshFrame.TYPE_CALL -> handleControl(fromAddress, frame.payload)
                 MeshFrame.TYPE_FILE_META -> handleFileMeta(fromAddress, frame.payload, transport)
                 MeshFrame.TYPE_FILE_CHUNK -> handleFileChunk(fromAddress, frame.payload, transport)
+                MeshFrame.TYPE_BRIDGE -> handleBridge(fromAddress, frame.payload, transport)
                 else -> Unit
             }
             return
+        }
+
+        // Not ours. If it is a bridge envelope and this phone has internet,
+        // carry it to the destination's relay topic so it can cross the
+        // country even though the sender has no data connection.
+        if (frame.type == MeshFrame.TYPE_BRIDGE && transport != TransportType.ONLINE) {
+            val dest = BridgeFrames.parse(frame.payload)?.destination
+            if (dest != null && !dest.equals(localUin, ignoreCase = true)) {
+                sendOnlineRaw(dest, bytes)
+            }
         }
 
         // Relay: not ours, forward with a shorter TTL.
@@ -945,6 +1013,22 @@ class MeshEngine(private val context: Context) {
         if (complete) handlePayload(from, buffer.join(), transport)
     }
 
+    private fun handleBridge(from: String, payload: ByteArray, transport: TransportType) {
+        val header = BridgeFrames.parse(payload) ?: return
+        val data = payload.copyOfRange(BridgeFrames.HEADER, payload.size)
+        val key = "$from|b${header.idHash}"
+        val buffer: SegBuffer
+        val complete: Boolean
+        synchronized(segmentLock) {
+            purgeSegments()
+            val b = segments.getOrPut(key) { SegBuffer(header.total) }
+            buffer = b
+            complete = synchronized(b) { b.put(header.sequence, data) }
+            if (complete) segments.remove(key)
+        }
+        if (complete) handlePayload(from, buffer.join(), transport)
+    }
+
     private fun purgeSegments() {
         val now = System.currentTimeMillis()
         val it = segments.entries.iterator()
@@ -979,7 +1063,7 @@ class MeshEngine(private val context: Context) {
 
         onMessageForMe?.invoke(sender, messageId, body, name, transport, phone)
         // Confirm receipt so the sender sees double ticks.
-        sendAck(from, messageId)
+        sendAck(sender, messageId)
     }
 
     private fun sendAck(destination: String, messageId: String) {
@@ -1060,6 +1144,9 @@ class MeshEngine(private val context: Context) {
     private fun noteHeard(uin: String) {
         if (uin.isBlank() || uin == localUin) return
         synchronized(heardLock) { lastHeard[uin] = System.currentTimeMillis() }
+        // Ask the relay for this phone's messages too: if it is offline but
+        // we have internet, we hand them over the local radios.
+        online?.watchUin(uin)
     }
 
     /** True when this UIN was heard on Bluetooth or Wi-Fi in the last 3 min. */

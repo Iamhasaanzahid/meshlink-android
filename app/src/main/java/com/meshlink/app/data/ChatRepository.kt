@@ -369,6 +369,21 @@ object ChatRepository {
     }
 
     /** Called by the mesh when a message arrives. */
+    /** Message ids already handed to the UI, to collapse mesh + bridge copies. */
+    private val incomingIds = HashSet<String>()
+
+    private fun claimIncoming(messageId: String): Boolean {
+        if (messageId.isBlank()) return false
+        synchronized(incomingIds) {
+            if (!incomingIds.add(messageId)) return false
+            if (incomingIds.size > 800) {
+                val old = incomingIds.iterator()
+                repeat(200) { if (old.hasNext()) { old.next(); old.remove() } }
+            }
+            return true
+        }
+    }
+
     fun onIncoming(
         from: String,
         messageId: String,
@@ -380,7 +395,9 @@ object ChatRepository {
         val peer = from.trim()
         if (peer.isEmpty() || body.isEmpty()) return
 
-        // Ignore exact duplicates (same radio frame seen twice).
+        // Ignore duplicates: the same message can arrive over the mesh and
+        // over an internet bridge at the same time.
+        if (!claimIncoming(messageId)) return
         if (exists(messageId)) return
 
         val msg = Message(
@@ -421,6 +438,7 @@ object ChatRepository {
     ) {
         val peer = from.trim()
         if (peer.isEmpty() || messageId.isEmpty()) return
+        if (!claimIncoming(messageId)) return
         if (exists(messageId)) return
 
         val kind = when {

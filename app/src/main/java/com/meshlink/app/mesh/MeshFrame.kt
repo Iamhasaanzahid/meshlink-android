@@ -42,6 +42,9 @@ object MeshFrame {
     /** One piece of a file: 4-byte transfer id, 2-byte index, then data. */
     const val TYPE_FILE_CHUNK: Byte = 0x08
 
+    /** Multi-hop + internet bridge envelope, see [BridgeFrames]. */
+    const val TYPE_BRIDGE: Byte = 0x09
+
     const val DEFAULT_TTL = 5
 
     data class Frame(
