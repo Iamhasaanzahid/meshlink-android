@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.11.1 — 2026-11-18
+
+### Added
+- **Voice notes.** Tap the microphone in the composer, speak, then tap stop.
+  The clip is recorded as AAC (32 kbps, up to 60 s) and travels exactly like a
+  photo: online in 48 KB pieces or over the local radios. Playback happens
+  inside the bubble with a play/pause button — no external player.
+
 ## 1.11.0 — 2026-11-18
 
 ### Added

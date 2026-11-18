@@ -1,6 +1,11 @@
 package com.meshlink.app.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.os.Build
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,7 +38,11 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
@@ -53,9 +62,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +84,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.meshlink.app.data.Chat
 import com.meshlink.app.data.ChatRepository
@@ -81,6 +93,7 @@ import com.meshlink.app.data.MsgKind
 import com.meshlink.app.data.MsgStatus
 import com.meshlink.app.util.MediaFiles
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -104,6 +117,10 @@ fun ConversationScreen(
     var contactName by remember { mutableStateOf("") }
     var viewerPath by remember { mutableStateOf<String?>(null) }
     var cameraFile by remember { mutableStateOf<File?>(null) }
+    var recording by remember { mutableStateOf(false) }
+    var recordSeconds by remember { mutableIntStateOf(0) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var voiceFile by remember { mutableStateOf<File?>(null) }
 
     LaunchedEffect(chat.peer) { ChatRepository.markRead(chat.peer) }
     LaunchedEffect(messages.size) {
@@ -148,6 +165,86 @@ fun ConversationScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> if (uri != null) sendPickedImage(uri) }
+
+    // ------------------------------------------------------------ voice notes
+
+    fun beginVoiceCapture() {
+        if (recording) return
+        runCatching {
+            val file = File(context.cacheDir, "voice-${System.currentTimeMillis()}.m4a")
+            val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            rec.setAudioEncodingBitRate(32_000)
+            rec.setAudioSamplingRate(16_000)
+            rec.setOutputFile(file.absolutePath)
+            rec.prepare()
+            rec.start()
+            recorder?.release()
+            recorder = rec
+            voiceFile = file
+            recordSeconds = 0
+            recording = true
+        }.onFailure {
+            recorder?.release()
+            recorder = null
+            recording = false
+            toast("Could not start recording")
+        }
+    }
+
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) beginVoiceCapture() else toast("Microphone permission is needed")
+    }
+
+    fun startVoice() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        beginVoiceCapture()
+    }
+
+    fun stopVoice(send: Boolean) {
+        val rec = recorder
+        recorder = null
+        runCatching { rec?.stop() }
+        runCatching { rec?.release() }
+        recording = false
+        val file = voiceFile
+        voiceFile = null
+        if (send && file != null && file.length() > 0 && recordSeconds >= 1) {
+            val sent = ChatRepository.sendMedia(
+                chat.peer, file, MsgKind.AUDIO, "audio/mp4", "voice.m4a", chat.name,
+            )
+            if (sent == null) toast("Voice message could not be sent")
+        } else {
+            file?.delete()
+        }
+        recordSeconds = 0
+    }
+
+    LaunchedEffect(recording) {
+        while (recording) {
+            delay(1_000)
+            if (!recording) break
+            recordSeconds++
+            if (recordSeconds >= 60) {
+                stopVoice(send = true)
+                break
+            }
+        }
+    }
 
     val documentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
@@ -286,27 +383,55 @@ fun ConversationScreen(
                             )
                         }
                     }
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message") },
-                        shape = RoundedCornerShape(24.dp),
-                        maxLines = 4,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    FilledIconButton(
-                        onClick = {
-                            val body = text.trim()
-                            if (body.isNotEmpty()) {
-                                ChatRepository.sendText(chat.peer, body, chat.name)
-                                text = ""
+                    if (recording) {
+                        Text(
+                            "● ${"%d:%02d".format(recordSeconds / 60, recordSeconds % 60)}",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 8.dp),
+                        )
+                        IconButton(onClick = { stopVoice(send = false) }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancel recording")
+                        }
+                        FilledIconButton(
+                            onClick = { stopVoice(send = true) },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(Icons.Filled.Stop, contentDescription = "Send voice message")
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { text = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Message") },
+                            shape = RoundedCornerShape(24.dp),
+                            maxLines = 4,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        if (text.isBlank()) {
+                            FilledIconButton(
+                                onClick = { startVoice() },
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Icon(Icons.Filled.Mic, contentDescription = "Record voice message")
                             }
-                        },
-                        enabled = text.isNotBlank(),
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(Icons.Filled.Send, contentDescription = "Send")
+                        } else {
+                            FilledIconButton(
+                                onClick = {
+                                    val body = text.trim()
+                                    if (body.isNotEmpty()) {
+                                        ChatRepository.sendText(chat.peer, body, chat.name)
+                                        text = ""
+                                    }
+                                },
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Icon(Icons.Filled.Send, contentDescription = "Send")
+                            }
+                        }
                     }
                 }
             }
@@ -450,6 +575,10 @@ private fun MessageBubble(
                     } else {
                         Text("[photo]", fontSize = 15.sp)
                     }
+                }
+
+                message.kind == MsgKind.AUDIO && message.mediaPath != null -> {
+                    VoiceBubble(path = message.mediaPath!!, fromMe = message.fromMe)
                 }
 
                 message.kind == MsgKind.DOCUMENT && message.mediaPath != null -> {
@@ -616,4 +745,70 @@ private fun transportShort(transport: String): String = when (transport) {
     "RADIO_SMS" -> "SMS"
     "AUTO" -> "Auto"
     else -> "Radio"
+}
+
+/** Small inline player for voice notes; no external app needed. */
+@Composable
+private fun VoiceBubble(path: String, fromMe: Boolean) {
+    val tint = if (fromMe) Color.White else MaterialTheme.colorScheme.primary
+    var playing by remember(path) { mutableStateOf(false) }
+    var player by remember(path) { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(path) {
+        onDispose {
+            runCatching { player?.stop() }
+            runCatching { player?.release() }
+            player = null
+        }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 2.dp),
+    ) {
+        IconButton(
+            onClick = {
+                if (playing) {
+                    runCatching { player?.stop() }
+                    runCatching { player?.release() }
+                    player = null
+                    playing = false
+                } else {
+                    runCatching {
+                        val p = MediaPlayer()
+                        p.setDataSource(path)
+                        p.setOnCompletionListener {
+                            playing = false
+                            it.release()
+                            if (player === it) player = null
+                        }
+                        p.prepare()
+                        p.start()
+                        player = p
+                        playing = true
+                    }.onFailure { playing = false }
+                }
+            },
+        ) {
+            Icon(
+                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (playing) "Pause voice message" else "Play voice message",
+                tint = tint,
+            )
+        }
+        Column {
+            Text(
+                if (playing) "Playing…" else "Voice message",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (fromMe) Color.White else Color(0xFF1D1B20),
+            )
+            Text(
+                "Tap to listen",
+                fontSize = 11.sp,
+                color = if (fromMe) Color.White.copy(alpha = 0.75f)
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
