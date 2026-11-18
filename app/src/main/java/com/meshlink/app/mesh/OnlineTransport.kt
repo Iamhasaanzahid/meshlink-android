@@ -86,7 +86,7 @@ class OnlineTransport(private val context: Context) {
      * Publishes one frame to [destination]'s topic.
      * Returns false when not connected or the address is not a UIN.
      */
-    fun publish(destination: String, frame: ByteArray): Boolean {
+    fun publish(destination: String, frame: ByteArray, qos: Int = 0): Boolean {
         val dest = destination.trim().uppercase()
         val me = uin
         if (me.isBlank() || dest.isBlank()) return false
@@ -98,7 +98,7 @@ class OnlineTransport(private val context: Context) {
             c.publish(
                 "$TOPIC_ROOT/$dest/$me",
                 MqttMessage(blob).apply {
-                    qos = 0
+                    this.qos = qos
                     isRetained = false
                 },
             )

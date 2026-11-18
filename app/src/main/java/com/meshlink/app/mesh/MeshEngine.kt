@@ -303,7 +303,9 @@ class MeshEngine(private val context: Context) {
         if (!t.isConnected) return false
         if (!destination.trim().uppercase().startsWith("OFF-")) return false
         onlineSender.execute {
-            runCatching { t.publish(destination, bytes) }
+            // QoS 1 for files and call signalling: one lost chunk would
+            // otherwise stall a photo forever.
+            runCatching { t.publish(destination, bytes, 1) }
         }
         return true
     }

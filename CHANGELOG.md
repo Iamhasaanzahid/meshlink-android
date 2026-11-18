@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.1 — 2026-11-18
+
+### Fixed
+- File chunks and internet-call signalling now use MQTT QoS 1. A single lost
+  48 KB chunk used to stall a photo forever; now the broker retries it.
+- Text messages keep QoS 0 so normal chat stays instant.
+
 ## 1.10.0 — 2026-11-18
 
 ### Added
