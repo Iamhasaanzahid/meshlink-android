@@ -19,6 +19,26 @@ class FileTransferTest {
     }
 
     @Test
+    fun `online chunk size splits a photo into a few pieces`() {
+        val data = Random(11).nextBytes(300_000)
+        val chunkSize = 48 * 1024
+        val chunks = FileTransfer.split(data, chunkSize)
+        assertEquals(7, chunks.size)
+        assertTrue(chunks.all { it.size <= chunkSize })
+
+        val assembler = FileTransfer.Assembler(chunks.size)
+        chunks.forEachIndexed { i, c -> assembler.put(i, c) }
+        assertTrue(assembler.isComplete())
+        assertArrayEquals(data, assembler.join())
+    }
+
+    @Test
+    fun `online chunk count matches the split`() {
+        assertEquals(1, FileTransfer.chunkCount(48 * 1024, 48 * 1024))
+        assertEquals(2, FileTransfer.chunkCount(48 * 1024 + 1, 48 * 1024))
+    }
+
+    @Test
     fun `empty file is one empty chunk`() {
         val chunks = FileTransfer.split(ByteArray(0))
         assertEquals(1, chunks.size)

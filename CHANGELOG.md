@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.10.0 — 2026-11-18
+
+### Added
+- **Photos and documents over the internet.** With online mode on, a picture
+  or document is published in 48 KB pieces (about 7 messages for a phone
+  photo) instead of 90-byte mesh chunks, so it reaches a contact on another
+  continent in seconds. Files are still capped at 3 MB.
+- **Real app-to-app internet calls.** Press the call button in a chat while
+  online mode is connected: the other phone rings inside MeshLink, the call
+  is accepted with one tap, and WebRTC carries encrypted audio directly
+  between the two phones. No code copying. Decline, hang up and the call log
+  all work like a normal messenger.
+- **The call button never opens the SIM dialer.** Calls stay inside MeshLink:
+  internet first, then the local Wi-Fi path. If neither exists the app says so
+  instead of jumping to the phone app.
+- A call is routed online only when the other phone has not been heard on a
+  local radio in the last three minutes, so nearby photos still use Wi-Fi.
+
+### Changed
+- Online mode carries three extra envelope types (file metadata, file chunks,
+  call signalling) inside the same AES-GCM envelope as normal frames.
+- Incoming internet calls keep a 45-second ring timeout.
+
+### Notes
+- Internet calls need both users in online mode and a network that allows
+  direct peer-to-peer UDP; strict CGNAT still blocks some calls (no TURN).
+- Offline country-wide messaging is still physically limited: Bluetooth and
+  Wi-Fi Direct are short range, phones cannot transmit FM, and SMS costs the
+  operator's normal rate. Multi-hop relaying and the optional SMS fallback are
+  the only no-internet ways to cross a country.
+
 ## 1.9.0 — 2026-11-17
 
 ### Added

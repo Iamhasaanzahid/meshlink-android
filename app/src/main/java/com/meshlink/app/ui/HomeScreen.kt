@@ -63,6 +63,7 @@ import com.meshlink.app.data.ChatRepository
 import com.meshlink.app.data.MeshSettings
 import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.CallManager
+import com.meshlink.app.mesh.OnlineCallManager
 import com.meshlink.app.mesh.CallPhase
 import com.meshlink.app.service.MeshService
 import com.meshlink.app.util.PermissionsHelper
@@ -80,6 +81,7 @@ fun HomeScreen(
     val calls by ChatRepository.calls.collectAsState()
     val contacts by ChatRepository.contacts.collectAsState()
     val callState by CallManager.state.collectAsState()
+    val onlineCall by OnlineCallManager.state.collectAsState()
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openPeer by rememberSaveable { mutableStateOf<String?>(null) }
@@ -88,7 +90,6 @@ fun HomeScreen(
     var addContactOpen by remember { mutableStateOf(false) }
     var contactName by remember { mutableStateOf("") }
     var contactAddress by remember { mutableStateOf("") }
-    var simFallback by remember { mutableStateOf<Pair<String, String>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var onlineCallOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -188,15 +189,33 @@ fun HomeScreen(
         }
     }
 
+    // Calls always stay inside MeshLink: internet first (when online mode is
+    // up and the other side is a UIN), then the local Wi-Fi path. Nothing
+    // opens the phone's SIM dialer.
     fun startCall(peer: String, name: String) {
         val mesh = engine
-        val overMesh = mesh != null && CallManager.placeCall(peer, name)
-        if (!overMesh) simFallback = peer to name
+        if (mesh?.onlineIsConnected == true && peer.trim().uppercase().startsWith("OFF-")) {
+            OnlineCallManager.startRelayedCall(peer, name)
+            onlineCallOpen = true
+            return
+        }
+        if (mesh != null && CallManager.placeCall(peer, name)) return
+        Toast.makeText(
+            context,
+            "No call path right now. Turn on Online mode (Settings) for an internet " +
+                "call, or put both phones on the same Wi-Fi / hotspot.",
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     val openChat: Chat? = openPeer?.let { peer ->
         chats.firstOrNull { it.peer == peer }
             ?: Chat(peer, openName.ifBlank { peer }, "", System.currentTimeMillis(), 0, "AUTO")
+    }
+
+    // A relayed call that ends drops straight back to the chat.
+    LaunchedEffect(onlineCall.phase) {
+        if (onlineCall.phase == OnlineCallManager.Phase.ENDED) onlineCallOpen = false
     }
 
     // Full-screen call UI takes priority.
@@ -443,44 +462,11 @@ fun HomeScreen(
         )
     }
 
-    simFallback?.let { (peer, name) ->
-        AlertDialog(
-            onDismissRequest = { simFallback = null },
-            title = { Text("Wi-Fi Direct not connected") },
-            text = {
-                Text(
-                    "In-app calls travel phone-to-phone over Wi-Fi Direct — free and " +
-                        "without internet. Both phones must be connected in a Wi-Fi " +
-                        "Direct group first (Settings → Nearby phones).\n\n" +
-                        "You can call $name over the normal SIM network instead.",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    simFallback = null
-                    dialSim(context, peer)
-                }) { Text("Call over SIM") }
-            },
-            dismissButton = { TextButton(onClick = { simFallback = null }) { Text("Cancel") } },
-        )
-    }
-
-    if (onlineCallOpen) {
+    if (onlineCallOpen ||
+        (onlineCall.phase != OnlineCallManager.Phase.IDLE &&
+            onlineCall.phase != OnlineCallManager.Phase.ENDED)
+    ) {
         OnlineCallScreen(onClose = { onlineCallOpen = false })
     }
 }
 
-private fun dialSim(context: android.content.Context, target: String) {
-    if (!target.matches(Regex("^\\+?[0-9]{3,15}$"))) {
-        Toast.makeText(context, "Save a phone number to call over the SIM.", Toast.LENGTH_LONG).show()
-        return
-    }
-    val granted = ContextCompat.checkSelfPermission(
-        context, Manifest.permission.CALL_PHONE,
-    ) == PackageManager.PERMISSION_GRANTED
-    val intent = Intent(if (granted) Intent.ACTION_CALL else Intent.ACTION_DIAL, Uri.parse("tel:$target"))
-    runCatching { context.startActivity(intent) }
-        .onFailure {
-            Toast.makeText(context, "Cannot open the dialer.", Toast.LENGTH_SHORT).show()
-        }
-}

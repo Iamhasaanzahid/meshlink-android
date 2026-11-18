@@ -235,6 +235,95 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                         )
                     }
 
+                    Phase.DIALING -> {
+                        Spacer(Modifier.height(30.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Calling ${ui.remoteName.ifBlank { "the other phone" }}…",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Ringing over the internet · encrypted",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(40.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                        ) {
+                            CallControl(
+                                icon = Icons.Filled.CallEnd,
+                                label = "Cancel",
+                                active = true,
+                                danger = true,
+                                onClick = {
+                                    OnlineCallManager.hangup()
+                                    onClose()
+                                },
+                            )
+                        }
+                    }
+
+                    Phase.RINGING -> {
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            ui.remoteName.ifBlank { "MeshLink call" },
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Incoming MeshLink call",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontSize = 15.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "over the internet · encrypted end to end",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(44.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                        ) {
+                            CallControl(
+                                icon = Icons.Filled.CallEnd,
+                                label = "Decline",
+                                active = true,
+                                danger = true,
+                                onClick = {
+                                    OnlineCallManager.declineRelayed()
+                                    onClose()
+                                },
+                            )
+                            CallControl(
+                                icon = Icons.Filled.Call,
+                                label = "Accept",
+                                active = true,
+                                onClick = {
+                                    withMic { OnlineCallManager.acceptRelayed() }
+                                },
+                            )
+                        }
+                    }
+
                     Phase.PREPARING -> {
                         Spacer(Modifier.height(30.dp))
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {

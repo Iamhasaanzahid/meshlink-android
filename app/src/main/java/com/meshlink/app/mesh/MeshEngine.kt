@@ -49,6 +49,16 @@ class MeshEngine(private val context: Context) {
         private const val SEG_DATA = MeshFrame.MAX_PAYLOAD - SEG_HEADER
         private const val SEG_MAX_PARTS = 255
         private const val SEG_TIMEOUT_MS = 2 * 60 * 1000L
+
+        /** Online-only envelopes (plaintext inside the AES-GCM blob). */
+        private const val TAG_ONLINE_META = "MLM1"
+        private const val TAG_ONLINE_CHUNK = "MLF1"
+        private const val TAG_ONLINE_CALL = "MLC1"
+
+        /** Big chunks for the internet relay; a 3 MB photo is ~64 publishes. */
+        private const val ONLINE_FILE_CHUNK = 48 * 1024
+        private const val MAX_ONLINE_CHUNKS = 512
+        private const val MAX_ONLINE_FILE = 5 * 1024 * 1024L
     }
 
     /** How many phones a frame may pass through before it is dropped. */
@@ -84,6 +94,9 @@ class MeshEngine(private val context: Context) {
     var onControl:
         ((from: String, action: String, callId: String, name: String, peerIp: String) -> Unit)? = null
 
+    /** WebRTC signalling for internet calls, carried inside online mode. */
+    var onCallSignal: ((from: String, json: String) -> Unit)? = null
+
     private val ble = BleTransport(context)
     private val wifi = WifiDirectTransport(context)
     private val lan = LanTransport(context)
@@ -100,6 +113,10 @@ class MeshEngine(private val context: Context) {
     private val seen = LinkedHashMap<String, Long>()
     private val seenLock = Any()
 
+    /** UIN -> time we last heard that phone on a local radio. */
+    private val lastHeard = HashMap<String, Long>()
+    private val heardLock = Any()
+
     private val segments = HashMap<String, SegBuffer>()
     private val segmentLock = Any()
 
@@ -115,7 +132,34 @@ class MeshEngine(private val context: Context) {
     }
 
     private val incomingFiles = HashMap<String, IncomingFile>()
+    private val onlineFiles = HashMap<String, OnlineFile>()
     private val fileLock = Any()
+
+    private class OnlineFile(
+        val messageId: String,
+        val name: String,
+        val mime: String,
+        val size: Long,
+        val senderUin: String,
+        val total: Int,
+    ) {
+        val parts = arrayOfNulls<ByteArray>(total)
+        var received = 0
+        var updatedAt = System.currentTimeMillis()
+
+        fun join(): ByteArray? {
+            var size = 0
+            parts.forEach { size += it?.size ?: 0 }
+            val out = ByteArray(size)
+            var pos = 0
+            parts.forEach { part ->
+                if (part == null) return null
+                part.copyInto(out, pos)
+                pos += part.size
+            }
+            return out
+        }
+    }
 
     private class SegBuffer(val total: Int) {
         val parts = arrayOfNulls<ByteArray>(total)
@@ -252,6 +296,21 @@ class MeshEngine(private val context: Context) {
         }
         return true
     }
+
+    /** Publishes one already-built online envelope (file / call signalling). */
+    private fun sendOnlineRaw(destination: String, bytes: ByteArray): Boolean {
+        val t = online ?: return false
+        if (!t.isConnected) return false
+        if (!destination.trim().uppercase().startsWith("OFF-")) return false
+        onlineSender.execute {
+            runCatching { t.publish(destination, bytes) }
+        }
+        return true
+    }
+
+    /** WebRTC offer / answer / ICE, delivered through online mode. */
+    fun sendOnlineCallSignal(destination: String, json: String): Boolean =
+        sendOnlineRaw(destination, (TAG_ONLINE_CALL + json).toByteArray(Charsets.UTF_8))
 
     // ---------------------------------------------------------------- sending
 
@@ -464,6 +523,15 @@ class MeshEngine(private val context: Context) {
         val target = destination.trim()
         if (target.isEmpty()) return false
 
+        // Online mode only takes over when no local radio has actually heard
+        // the other phone. Local Wi-Fi is faster and stays on the LAN.
+        val useOnline = target.startsWith("OFF-") &&
+            online?.isConnected == true &&
+            !heardRecently(target)
+        if (useOnline) {
+            return sendFileOnline(target, messageId, fileName, mime, data, onProgress)
+        }
+
         val chunks = FileTransfer.split(data)
         val transferId = MessageDigest.getInstance("SHA-256")
             .digest(messageId.toByteArray(Charsets.UTF_8))
@@ -528,6 +596,62 @@ class MeshEngine(private val context: Context) {
     }
 
     /**
+     * Files over the internet relay. MQTT messages may be much bigger than a
+     * mesh frame, so a photo becomes ~7 publishes instead of 3,400.
+     */
+    private fun sendFileOnline(
+        destination: String,
+        messageId: String,
+        fileName: String,
+        mime: String,
+        data: ByteArray,
+        onProgress: ((Int) -> Unit)?,
+    ): Boolean {
+        val chunks = FileTransfer.split(data, ONLINE_FILE_CHUNK)
+        if (chunks.size > MAX_ONLINE_CHUNKS) return false
+        val transferId = MessageDigest.getInstance("SHA-256")
+            .digest(messageId.toByteArray(Charsets.UTF_8))
+            .copyOfRange(0, 4)
+        val idHex = transferId.joinToString("") { "%02x".format(it) }
+
+        val meta = runCatching {
+            TAG_ONLINE_META + JSONObject()
+                .put("i", idHex)
+                .put("n", safeFileName(fileName).take(64))
+                .put("m", mime.take(64))
+                .put("s", data.size.toLong())
+                .put("c", chunks.size)
+                .put("u", localUin)
+                .toString()
+        }.getOrNull() ?: return false
+        if (!sendOnlineRaw(destination, meta.toByteArray(Charsets.UTF_8))) return false
+
+        val totalFrames = chunks.size + 1
+        var sent = 1
+        var lastReported = 0
+        for ((index, chunk) in chunks.withIndex()) {
+            val payload = ByteArray(8 + chunk.size)
+            transferId.copyInto(payload, 0)
+            payload[4] = ((index shr 24) and 0xFF).toByte()
+            payload[5] = ((index shr 16) and 0xFF).toByte()
+            payload[6] = ((index shr 8) and 0xFF).toByte()
+            payload[7] = (index and 0xFF).toByte()
+            chunk.copyInto(payload, 8)
+            val message = TAG_ONLINE_CHUNK.toByteArray(Charsets.UTF_8) + payload
+            if (!sendOnlineRaw(destination, message)) return false
+            sent++
+            if (sent % 16 == 0) Thread.sleep(1)
+            val percent = sent * 100 / totalFrames
+            if (percent > lastReported) {
+                lastReported = percent
+                onProgress?.invoke(percent)
+            }
+        }
+        onProgress?.invoke(100)
+        return true
+    }
+
+    /**
      * Picks one radio for a whole file. Wi-Fi LAN first (fast, reliable),
      * then Wi-Fi Direct (only if a group exists), then Bluetooth LE with a
      * short pause per frame so the GATT queue can keep up.
@@ -562,7 +686,7 @@ class MeshEngine(private val context: Context) {
         return { false }
     }
 
-    fun isFileCapable(): Boolean = lanActive || bleActive || wifiActive
+    fun isFileCapable(): Boolean = lanActive || bleActive || wifiActive || online?.isConnected == true
 
     private fun safeFileName(name: String): String =
         name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "file" }
@@ -571,6 +695,7 @@ class MeshEngine(private val context: Context) {
         val json = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull() ?: return
         val id = json.optString("i", "")
         val total = json.optInt("c", 0)
+        noteHeard(json.optString("u", ""))
         if (id.length != 8 || total <= 0 || total > 40_000) return
 
         synchronized(fileLock) {
@@ -627,17 +752,115 @@ class MeshEngine(private val context: Context) {
         }.onFailure { Log.w(TAG, "could not save incoming file", it) }
     }
 
+    // ------------------------------------------------------- online file rx
+
+    private fun handleOnlineFileMeta(from: String, raw: ByteArray) {
+        if (raw.size > 4_096) return
+        val json = runCatching { JSONObject(String(raw, Charsets.UTF_8)) }.getOrNull() ?: return
+        val id = json.optString("i", "")
+        val total = json.optInt("c", 0)
+        val size = json.optLong("s", 0)
+        noteHeard(json.optString("u", ""))
+        if (id.length != 8 || total <= 0 || total > MAX_ONLINE_CHUNKS) return
+        if (size < 0 || size > MAX_ONLINE_FILE) return
+
+        synchronized(fileLock) {
+            purgeFiles()
+            val key = "$from|$id"
+            if (onlineFiles.containsKey(key)) return
+            onlineFiles[key] = OnlineFile(
+                messageId = id,
+                name = safeFileName(json.optString("n", "file")),
+                mime = json.optString("m", "application/octet-stream"),
+                size = size,
+                senderUin = json.optString("u", ""),
+                total = total,
+            )
+        }
+    }
+
+    private fun handleOnlineFileChunk(from: String, payload: ByteArray) {
+        if (payload.size < 9) return
+        val id = payload.copyOfRange(0, 4).joinToString("") { "%02x".format(it) }
+        val index = ((payload[4].toInt() and 0xFF) shl 24) or
+            ((payload[5].toInt() and 0xFF) shl 16) or
+            ((payload[6].toInt() and 0xFF) shl 8) or
+            (payload[7].toInt() and 0xFF)
+        val data = payload.copyOfRange(8, payload.size)
+
+        var complete: OnlineFile? = null
+        synchronized(fileLock) {
+            purgeFiles()
+            val file = onlineFiles["$from|$id"] ?: return
+            if (index in 0 until file.total && file.parts[index] == null) {
+                file.parts[index] = data
+                file.received++
+                file.updatedAt = System.currentTimeMillis()
+                if (file.received == file.total) {
+                    onlineFiles.remove("$from|$id")
+                    complete = file
+                }
+            }
+        }
+        complete?.let { finishOnlineFile(from, it) }
+    }
+
+    private fun finishOnlineFile(from: String, file: OnlineFile) {
+        runCatching {
+            val bytes = file.join() ?: return
+            if (bytes.size > MAX_ONLINE_FILE) return
+            val dir = java.io.File(context.filesDir, "media").apply { mkdirs() }
+            val extension = file.name.substringAfterLast('.', "").take(8)
+            val out = java.io.File(
+                dir,
+                file.messageId + if (extension.isNotBlank()) ".$extension" else "",
+            )
+            out.writeBytes(bytes)
+            val sender = file.senderUin.ifBlank { from }
+            onFileForMe?.invoke(
+                sender, file.messageId, file.name, file.mime, out.absolutePath,
+                out.length(), TransportType.ONLINE, file.senderUin,
+            )
+            sendAck(sender, file.messageId)
+        }.onFailure { Log.w(TAG, "could not save online file", it) }
+    }
+
     private fun purgeFiles() {
         val now = System.currentTimeMillis()
         val it = incomingFiles.entries.iterator()
         while (it.hasNext()) {
             if (now - it.next().value.updatedAt > 3 * 60 * 1000L) it.remove()
         }
+        val online = onlineFiles.entries.iterator()
+        while (online.hasNext()) {
+            if (now - online.next().value.updatedAt > 3 * 60 * 1000L) online.remove()
+        }
     }
 
     // --------------------------------------------------------------- receiving
 
     private fun handleIncoming(fromAddress: String, transport: TransportType, bytes: ByteArray) {
+        // Online mode carries three extra envelope types beside mesh frames.
+        if (transport == TransportType.ONLINE && bytes.size >= 8) {
+            when (String(bytes, 0, 4, Charsets.UTF_8)) {
+                TAG_ONLINE_META -> {
+                    handleOnlineFileMeta(fromAddress, bytes.copyOfRange(4, bytes.size))
+                    return
+                }
+                TAG_ONLINE_CHUNK -> {
+                    handleOnlineFileChunk(fromAddress, bytes.copyOfRange(4, bytes.size))
+                    return
+                }
+                TAG_ONLINE_CALL -> {
+                    onCallSignal?.invoke(
+                        fromAddress,
+                        String(bytes, 4, bytes.size - 4, Charsets.UTF_8),
+                    )
+                    return
+                }
+            }
+        }
+
         val frame = MeshFrame.deserialize(bytes)
 
         if (frame == null) {
@@ -750,6 +973,7 @@ class MeshEngine(private val context: Context) {
 
         val messageId = id?.takeIf { it.isNotEmpty() } ?: newId(payload)
         if (body.isEmpty()) return
+        if (transport != TransportType.ONLINE) noteHeard(sender)
 
         onMessageForMe?.invoke(sender, messageId, body, name, transport, phone)
         // Confirm receipt so the sender sees double ticks.
@@ -777,6 +1001,7 @@ class MeshEngine(private val context: Context) {
             val callId = json.optString("id", "")
             val name = json.optString("n", "")
             val sender = json.optString("u", "").takeIf { it.isNotBlank() } ?: from
+            noteHeard(sender)
             val peerIp = json.optString("ip", "")
             if (action.isNotEmpty() && callId.isNotEmpty()) {
                 onControl?.invoke(sender, action, callId, name, peerIp)
@@ -829,6 +1054,18 @@ class MeshEngine(private val context: Context) {
     )
 
     // ------------------------------------------------------------------- utils
+
+    private fun noteHeard(uin: String) {
+        if (uin.isBlank() || uin == localUin) return
+        synchronized(heardLock) { lastHeard[uin] = System.currentTimeMillis() }
+    }
+
+    /** True when this UIN was heard on Bluetooth or Wi-Fi in the last 3 min. */
+    private fun heardRecently(uin: String): Boolean =
+        synchronized(heardLock) {
+            val at = lastHeard[uin] ?: 0L
+            at > 0 && System.currentTimeMillis() - at < 3 * 60 * 1000L
+        }
 
     private fun newId(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes)

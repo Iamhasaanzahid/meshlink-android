@@ -25,9 +25,10 @@ crowd, a building or a village where the network is down.
   status (queued / sent / delivered) and tap-to-retry when a radio can't reach
   the other phone.
 - **Calls** — ring, accept, mute, speaker and hang up, with a live timer.
-  Voice is streamed directly between the two phones over Wi-Fi: a shared
-  router/hotspot (UDP) or a Wi-Fi Direct group. If neither path exists, the
-  app offers a normal SIM call instead.
+  The call button stays inside MeshLink: with online mode on it rings the other
+  phone over the internet and WebRTC carries encrypted audio; otherwise it
+  uses the shared Wi-Fi/hotspot or Wi-Fi Direct path. It never jumps to the
+  phone's SIM dialer.
 - **Online mode (www)** — switch it on in Settings to send messages anywhere in
   the world through an MQTT relay. Off by default; see *Online mode* below.
 - **Photos and documents** — send a picture from the gallery, take a new one,
@@ -123,7 +124,9 @@ reassembled on the other phone, so a dropped chunk only costs that chunk.
 
 Wi-Fi Direct or the same Wi-Fi network is the right path for photos; Bluetooth
 LE works but is slow (a photo can take about a minute). SMS is never used for
-files. Like text messages, file payloads are not end-to-end encrypted yet.
+files. With online mode on, photos and documents also travel over the internet
+in 48 KB pieces, so a contact abroad receives them in seconds. Local file
+payloads are not end-to-end encrypted yet; online ones are AES-GCM encrypted.
 
 ## Online mode (worldwide messages)
 

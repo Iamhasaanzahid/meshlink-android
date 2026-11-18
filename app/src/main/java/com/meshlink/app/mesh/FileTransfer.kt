@@ -14,15 +14,16 @@ object FileTransfer {
     /** Metadata has to fit in one mesh frame as well. */
     const val MAX_META = 96
 
-    fun chunkCount(size: Int): Int =
-        if (size <= 0) 1 else (size + MAX_CHUNK - 1) / MAX_CHUNK
+    fun chunkCount(size: Int, chunkSize: Int = MAX_CHUNK): Int =
+        if (size <= 0) 1 else (size + chunkSize - 1) / chunkSize
 
-    fun split(data: ByteArray): List<ByteArray> {
+    fun split(data: ByteArray, chunkSize: Int = MAX_CHUNK): List<ByteArray> {
+        require(chunkSize in 1..65_535) { "bad chunk size: $chunkSize" }
         if (data.isEmpty()) return listOf(ByteArray(0))
-        val out = ArrayList<ByteArray>(chunkCount(data.size))
+        val out = ArrayList<ByteArray>(chunkCount(data.size, chunkSize))
         var offset = 0
         while (offset < data.size) {
-            val end = minOf(offset + MAX_CHUNK, data.size)
+            val end = minOf(offset + chunkSize, data.size)
             out += data.copyOfRange(offset, end)
             offset = end
         }

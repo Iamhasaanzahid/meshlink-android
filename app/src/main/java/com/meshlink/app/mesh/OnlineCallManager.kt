@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
@@ -28,6 +29,7 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import java.util.UUID
 
 /**
  * ONLINE CALLS — peer-to-peer voice over the internet, like WhatsApp calls.
@@ -54,7 +56,19 @@ object OnlineCallManager {
 
     private const val TAG = "MeshLinkOnline"
 
-    enum class Phase { IDLE, PREPARING, SHARE_CODE, CONNECTING, CONNECTED, FAILED, ENDED }
+    enum class Phase {
+        IDLE,
+        PREPARING,
+        /** Outgoing internet call: ringing on the other phone. */
+        DIALING,
+        /** Incoming internet call: accept or decline. */
+        RINGING,
+        SHARE_CODE,
+        CONNECTING,
+        CONNECTED,
+        FAILED,
+        ENDED,
+    }
 
     enum class Role { CALLER, CALLEE }
 
@@ -67,6 +81,10 @@ object OnlineCallManager {
         val speakerOn: Boolean = false,
         val seconds: Int = 0,
         val message: String? = null,
+        /** True when the call was signalled automatically over online mode. */
+        val relayed: Boolean = false,
+        val peer: String = "",
+        val callId: String = "",
     )
 
     private val _state = MutableStateFlow(Ui())
@@ -82,6 +100,14 @@ object OnlineCallManager {
     private var audioTrack: AudioTrack? = null
     private var timerJob: Job? = null
     private var exportRunnable: Runnable? = null
+    private var ringTimeout: Runnable? = null
+    private var pendingOffer: String? = null
+
+    /**
+     * Set by MeshService: publishes one WebRTC signalling message to
+     * [peer] through online mode.
+     */
+    var sendSignal: ((peer: String, message: String) -> Unit)? = null
 
     private fun context(): Context = appContext ?: throw IllegalStateException("OnlineCallManager not attached")
 
@@ -128,7 +154,21 @@ object OnlineCallManager {
 
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
-        override fun onIceCandidate(candidate: IceCandidate?) = Unit
+        override fun onIceCandidate(candidate: IceCandidate?) {
+            val s = _state.value
+            if (candidate == null || !s.relayed) return
+            if (s.peer.isBlank() || s.callId.isBlank()) return
+            val json = runCatching {
+                JSONObject()
+                    .put("a", "ice")
+                    .put("id", s.callId)
+                    .put("cand", candidate.sdp)
+                    .put("mid", candidate.sdpMid ?: "")
+                    .put("mline", candidate.sdpMLineIndex)
+                    .toString()
+            }.getOrNull() ?: return
+            sendSignal?.invoke(s.peer, json)
+        }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
         override fun onAddStream(stream: MediaStream?) = Unit
         override fun onRemoveStream(stream: MediaStream?) = Unit
@@ -264,9 +304,257 @@ object OnlineCallManager {
         }
     }
 
+    // ------------------------------------------------- relayed internet call
+
+    /**
+     * Starts a normal app-to-app internet call. The offer travels through
+     * online mode (MQTT), the other phone rings itself, and WebRTC media
+     * connects directly with DTLS-SRTP.
+     */
+    fun startRelayedCall(peer: String, name: String) {
+        val target = peer.trim()
+        if (target.isBlank()) return
+        reset(keepAudio = false)
+        val id = UUID.randomUUID().toString().take(8)
+        _state.value = Ui(
+            phase = Phase.DIALING,
+            role = Role.CALLER,
+            remoteName = name.ifBlank { target },
+            relayed = true,
+            peer = target,
+            callId = id,
+        )
+        enterAudioMode()
+        armRingTimeout(id)
+        try {
+            val pc = newPeerConnection()
+            pc.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(desc: SessionDescription?) {
+                    if (desc == null) {
+                        fail("Could not create the call")
+                        return
+                    }
+                    pc.setLocalDescription(object : SdpObserver {
+                        override fun onSetSuccess() {
+                            val local = pc.localDescription ?: desc
+                            sendSignal?.invoke(target, offerJson(id, local))
+                        }
+
+                        override fun onSetFailure(error: String?) =
+                            fail(error ?: "Call setup failed")
+
+                        override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                        override fun onCreateFailure(error: String?) = Unit
+                    }, desc)
+                }
+
+                override fun onCreateFailure(error: String?) =
+                    fail(error ?: "Could not create the call")
+
+                override fun onSetSuccess() = Unit
+                override fun onSetFailure(error: String?) = Unit
+            }, MediaConstraints())
+        } catch (t: Throwable) {
+            Log.w(TAG, "relayed caller setup failed", t)
+            fail(t.message ?: "WebRTC is not available on this phone")
+        }
+    }
+
+    /** Answers a ringing internet call. */
+    fun acceptRelayed() {
+        val s = _state.value
+        if (s.phase != Phase.RINGING || !s.relayed) return
+        val offer = pendingOffer
+        if (offer.isNullOrBlank()) {
+            fail("This call offer is no longer valid")
+            return
+        }
+        cancelRingTimeout()
+        _state.value = s.copy(phase = Phase.CONNECTING, message = null)
+        enterAudioMode()
+        armRingTimeout(s.callId)
+        try {
+            val pc = newPeerConnection()
+            pc.setRemoteDescription(object : SdpObserver {
+                override fun onSetSuccess() {
+                    pc.createAnswer(object : SdpObserver {
+                        override fun onCreateSuccess(desc: SessionDescription?) {
+                            if (desc == null) {
+                                fail("Could not answer the call")
+                                return
+                            }
+                            pc.setLocalDescription(object : SdpObserver {
+                                override fun onSetSuccess() {
+                                    val local = pc.localDescription ?: desc
+                                    sendSignal?.invoke(s.peer, answerJson(s.callId, local))
+                                }
+
+                                override fun onSetFailure(error: String?) =
+                                    fail(error ?: "Call setup failed")
+
+                                override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                                override fun onCreateFailure(error: String?) = Unit
+                            }, desc)
+                        }
+
+                        override fun onCreateFailure(error: String?) =
+                            fail(error ?: "Could not answer")
+
+                        override fun onSetSuccess() = Unit
+                        override fun onSetFailure(error: String?) = Unit
+                    }, MediaConstraints())
+                }
+
+                override fun onSetFailure(error: String?) =
+                    fail(error ?: "That call offer is not valid")
+
+                override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                override fun onCreateFailure(error: String?) = Unit
+            }, SessionDescription(SessionDescription.Type.OFFER, offer))
+        } catch (t: Throwable) {
+            Log.w(TAG, "relayed callee setup failed", t)
+            fail(t.message ?: "WebRTC is not available on this phone")
+        }
+    }
+
+    /** Declines a ringing internet call and tells the caller. */
+    fun declineRelayed() {
+        val s = _state.value
+        if (s.phase != Phase.RINGING) return
+        if (s.peer.isNotBlank() && s.callId.isNotBlank()) {
+            sendSignal?.invoke(s.peer, simpleJson("reject", s.callId))
+        }
+        reset(keepAudio = false)
+        _state.value = Ui(phase = Phase.ENDED)
+    }
+
+    /** A signalling message arrived through online mode. */
+    fun onSignal(from: String, message: String) {
+        handler.post {
+            val json = runCatching { JSONObject(message) }.getOrNull() ?: return@post
+            val action = json.optString("a")
+            val id = json.optString("id")
+            val current = _state.value
+            when (action) {
+                "offer" -> {
+                    val busy = current.phase != Phase.IDLE &&
+                        current.phase != Phase.ENDED &&
+                        current.phase != Phase.FAILED
+                    if (busy) {
+                        sendSignal?.invoke(from, simpleJson("reject", id))
+                        return@post
+                    }
+                    pendingOffer = json.optString("sdp")
+                    _state.value = Ui(
+                        phase = Phase.RINGING,
+                        role = Role.CALLEE,
+                        remoteName = json.optString("n").ifBlank { from },
+                        relayed = true,
+                        peer = from,
+                        callId = id,
+                    )
+                    armRingTimeout(id)
+                }
+
+                "answer" -> {
+                    if (current.callId != id || current.role != Role.CALLER) return@post
+                    val pc = peerConnection ?: return@post
+                    val sdp = json.optString("sdp")
+                    if (sdp.isBlank()) return@post
+                    _state.value = current.copy(phase = Phase.CONNECTING, message = null)
+                    pc.setRemoteDescription(object : SdpObserver {
+                        override fun onSetSuccess() = Unit
+                        override fun onSetFailure(error: String?) =
+                            fail(error ?: "Could not connect the call")
+
+                        override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                        override fun onCreateFailure(error: String?) = Unit
+                    }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                }
+
+                "ice" -> {
+                    if (current.callId != id) return@post
+                    val pc = peerConnection ?: return@post
+                    val cand = json.optString("cand")
+                    if (cand.isBlank()) return@post
+                    runCatching {
+                        pc.addIceCandidate(
+                            IceCandidate(
+                                json.optString("mid"),
+                                json.optInt("mline"),
+                                cand,
+                            )
+                        )
+                    }
+                }
+
+                "reject" -> {
+                    if (current.callId != id) return@post
+                    cancelRingTimeout()
+                    reset(keepAudio = false)
+                    _state.value = Ui(phase = Phase.FAILED, message = "Call declined")
+                }
+
+                "hangup" -> {
+                    if (current.callId != id) return@post
+                    cancelRingTimeout()
+                    reset(keepAudio = false)
+                    _state.value = Ui(phase = Phase.ENDED)
+                }
+            }
+        }
+    }
+
+    private fun offerJson(id: String, desc: SessionDescription): String =
+        runCatching {
+            JSONObject()
+                .put("a", "offer")
+                .put("id", id)
+                .put("sdp", desc.description)
+                .put("n", appContext?.let { SessionStore.displayName(it) } ?: "")
+                .toString()
+        }.getOrDefault("")
+
+    private fun answerJson(id: String, desc: SessionDescription): String =
+        runCatching {
+            JSONObject()
+                .put("a", "answer")
+                .put("id", id)
+                .put("sdp", desc.description)
+                .toString()
+        }.getOrDefault("")
+
+    private fun simpleJson(action: String, id: String): String =
+        runCatching { JSONObject().put("a", action).put("id", id).toString() }
+            .getOrDefault("{\"a\":\"$action\",\"id\":\"$id\"}")
+
+    private fun armRingTimeout(id: String) {
+        cancelRingTimeout()
+        val runnable = Runnable {
+            val s = _state.value
+            if (s.callId == id && s.phase != Phase.CONNECTED) {
+                if (s.phase == Phase.RINGING && s.role == Role.CALLEE) {
+                    // The caller gave up; stop ringing quietly.
+                    reset(keepAudio = false)
+                    _state.value = Ui(phase = Phase.ENDED)
+                } else {
+                    fail("No answer. The other phone may be offline or on a very strict network.")
+                }
+            }
+        }
+        ringTimeout = runnable
+        handler.postDelayed(runnable, 45_000)
+    }
+
+    private fun cancelRingTimeout() {
+        ringTimeout?.let { handler.removeCallbacks(it) }
+        ringTimeout = null
+    }
+
     // ---------------------------------------------------------- code export
 
     private fun scheduleExport() {
+        if (_state.value.relayed) return
         cancelExport()
         val started = System.currentTimeMillis()
         val runnable = object : Runnable {
@@ -329,14 +617,33 @@ object OnlineCallManager {
     }
 
     fun hangup() {
+        val s = _state.value
+        if (s.relayed && s.peer.isNotBlank() && s.callId.isNotBlank()) {
+            sendSignal?.invoke(s.peer, simpleJson("hangup", s.callId))
+        }
+        if (s.phase == Phase.CONNECTED && s.peer.isNotBlank()) {
+            com.meshlink.app.data.ChatRepository.logCall(
+                peer = s.peer,
+                name = s.remoteName,
+                outgoing = s.role == Role.CALLER,
+                missed = false,
+                transport = "ONLINE",
+                timestamp = System.currentTimeMillis(),
+                durationSec = s.seconds,
+                status = "COMPLETED",
+            )
+        }
+        cancelRingTimeout()
         reset(keepAudio = false)
-        _state.value = Ui(phase = Phase.ENDED)
+        _state.value = Ui(phase = Phase.ENDED, relayed = s.relayed, remoteName = s.remoteName)
     }
 
     fun reset(keepAudio: Boolean = false) {
         timerJob?.cancel()
         timerJob = null
         cancelExport()
+        cancelRingTimeout()
+        pendingOffer = null
         runCatching { audioTrack?.setEnabled(false) }
         runCatching { peerConnection?.close() }
         runCatching { peerConnection?.dispose() }
@@ -353,6 +660,7 @@ object OnlineCallManager {
 
     private fun onConnected() {
         if (_state.value.phase == Phase.CONNECTED) return
+        cancelRingTimeout()
         _state.value = _state.value.copy(phase = Phase.CONNECTED, message = null, seconds = 0)
         timerJob?.cancel()
         timerJob = scope.launch {

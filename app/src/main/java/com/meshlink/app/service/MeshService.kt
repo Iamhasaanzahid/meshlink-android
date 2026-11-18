@@ -84,6 +84,12 @@ class MeshService : Service() {
 
         CallManager.attach(this, mesh)
         OnlineCallManager.attach(this)
+        OnlineCallManager.sendSignal = { peer, message ->
+            mesh.sendOnlineCallSignal(peer, message)
+        }
+        mesh.onCallSignal = { from, message ->
+            OnlineCallManager.onSignal(from, message)
+        }
         CallManager.onIncomingCall = { state -> notifyIncomingCall(state) }
         CallManager.onCallEnded = { cancelCallNotification() }
 
