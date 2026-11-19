@@ -65,5 +65,37 @@ object MeshSettings {
         prefs(context).edit().putString(KEY_BROKER, url.trim()).apply()
     }
 
+    private const val KEY_PINNED = "pinned_peers"
+    private const val KEY_MUTED = "muted_peers"
+
+    /** Chats the user pinned to the top of the list (UINs, uppercase). */
+    fun pinned(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_PINNED, emptySet())?.toSet() ?: emptySet()
+
+    fun togglePinned(context: Context, peer: String): Boolean {
+        val key = peer.trim().uppercase()
+        if (key.isEmpty()) return false
+        val next = pinned(context).toMutableSet()
+        val added = if (next.contains(key)) next.remove(key).let { false } else next.add(key)
+        prefs(context).edit().putStringSet(KEY_PINNED, next).apply()
+        return added
+    }
+
+    /** Muted chats never raise a notification (they still arrive normally). */
+    fun muted(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_MUTED, emptySet())?.toSet() ?: emptySet()
+
+    fun toggleMuted(context: Context, peer: String): Boolean {
+        val key = peer.trim().uppercase()
+        if (key.isEmpty()) return false
+        val next = muted(context).toMutableSet()
+        val added = if (next.contains(key)) next.remove(key).let { false } else next.add(key)
+        prefs(context).edit().putStringSet(KEY_MUTED, next).apply()
+        return added
+    }
+
+    fun isMuted(context: Context, peer: String): Boolean =
+        muted(context).contains(peer.trim().uppercase())
+
     const val DEFAULT_BROKER = "ssl://broker.hivemq.com:8883"
 }

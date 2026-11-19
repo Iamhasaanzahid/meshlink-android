@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.13.0 — 2026-11-18
+
+### Added
+- **Pin and mute chats.** Long-press a chat row: pin it to the top or mute its
+  notifications. Muted chats still receive messages, they just stay quiet.
+  Both choices are stored on the phone only.
+- **Message info.** Long-press a bubble → Message info shows direction, exact
+  time, which route carried it (Wi-Fi, Bluetooth, SMS, online), delivery
+  status and file size. A reminder that the only copy lives on this phone.
+
 ## 1.12.1 — 2026-11-18
 
 ### Added

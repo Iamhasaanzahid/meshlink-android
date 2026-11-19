@@ -110,6 +110,8 @@ fun HomeScreen(
     var query by remember { mutableStateOf("") }
     var callPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pinnedPeers by remember { mutableStateOf(MeshSettings.pinned(context)) }
+    var mutedPeers by remember { mutableStateOf(MeshSettings.muted(context)) }
 
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
     var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
@@ -476,10 +478,26 @@ fun HomeScreen(
                 when (tab) {
                     0 -> Column {
                         ChatListScreen(
-                            chats = chats.filter {
-                                query.isBlank() ||
-                                    it.name.contains(query, ignoreCase = true) ||
-                                    it.peer.contains(query, ignoreCase = true)
+                            chats = chats
+                                .filter {
+                                    query.isBlank() ||
+                                        it.name.contains(query, ignoreCase = true) ||
+                                        it.peer.contains(query, ignoreCase = true)
+                                }
+                                .sortedWith(
+                                    compareByDescending<Chat> {
+                                        pinnedPeers.contains(it.peer.uppercase())
+                                    }.thenByDescending { it.lastTimestamp },
+                                ),
+                            pinned = pinnedPeers,
+                            muted = mutedPeers,
+                            onTogglePin = { chat ->
+                                MeshSettings.togglePinned(context, chat.peer)
+                                pinnedPeers = MeshSettings.pinned(context)
+                            },
+                            onToggleMute = { chat ->
+                                MeshSettings.toggleMuted(context, chat.peer)
+                                mutedPeers = MeshSettings.muted(context)
                             },
                             onOpen = { chat ->
                                 openPeer = chat.peer

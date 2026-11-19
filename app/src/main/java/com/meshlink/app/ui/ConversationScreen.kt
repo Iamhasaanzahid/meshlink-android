@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
@@ -138,6 +139,7 @@ fun ConversationScreen(
     var selectedMessage by remember { mutableStateOf<Message?>(null) }
     var forwardMessage by remember { mutableStateOf<Message?>(null) }
     var replyTo by remember { mutableStateOf<Message?>(null) }
+    var infoMessage by remember { mutableStateOf<Message?>(null) }
 
     LaunchedEffect(chat.peer) { ChatRepository.markRead(chat.peer) }
     LaunchedEffect(messages.size) {
@@ -640,6 +642,14 @@ fun ConversationScreen(
                         Text("Forward")
                     }
                     TextButton(onClick = {
+                        infoMessage = m
+                        selectedMessage = null
+                    }) {
+                        Icon(Icons.Filled.Info, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Message info")
+                    }
+                    TextButton(onClick = {
                         ChatRepository.deleteMessage(m.id)
                         selectedMessage = null
                     }) {
@@ -651,6 +661,52 @@ fun ConversationScreen(
             },
             confirmButton = {
                 TextButton(onClick = { selectedMessage = null }) { Text("Close") }
+            },
+        )
+    }
+
+    if (infoMessage != null) {
+        val m = infoMessage!!
+        AlertDialog(
+            onDismissRequest = { infoMessage = null },
+            title = { Text("Message info") },
+            text = {
+                Column {
+                    Text(
+                        "Direction: " + if (m.fromMe) "Sent" else "Received",
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        "Time: ${formatDateSeparator(m.timestamp)}, ${formatTime(m.timestamp)}",
+                        fontSize = 13.sp,
+                    )
+                    Text("Route: ${transportShort(m.transport)}", fontSize = 13.sp)
+                    Text(
+                        "Status: " + when (m.status) {
+                            MsgStatus.SENDING -> "Sending"
+                            MsgStatus.SENT -> "Sent"
+                            MsgStatus.DELIVERED -> "Delivered"
+                            MsgStatus.FAILED -> "Failed — tap the bubble to retry"
+                            MsgStatus.RECEIVED -> "Received"
+                        },
+                        fontSize = 13.sp,
+                    )
+                    if (m.mediaName.isNotBlank()) {
+                        Text(
+                            "File: ${m.mediaName} · ${formatBytes(m.mediaSize)}",
+                            fontSize = 13.sp,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Messages are stored on this phone only. There is no server copy.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { infoMessage = null }) { Text("Close") }
             },
         )
     }

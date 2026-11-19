@@ -14,6 +14,7 @@ import com.meshlink.app.MainActivity
 import com.meshlink.app.R
 import com.meshlink.app.data.Chat
 import com.meshlink.app.data.ChatRepository
+import com.meshlink.app.data.MeshSettings
 import com.meshlink.app.data.Message
 import com.meshlink.app.data.SessionStore
 import com.meshlink.app.mesh.CallManager
@@ -187,6 +188,7 @@ class MeshService : Service() {
 
     private fun notifyMessage(message: Message, chat: Chat) {
         if (AppForeground.active) return
+        if (MeshSettings.isMuted(this, chat.peer)) return
         val open = PendingIntent.getActivity(
             this,
             10,
