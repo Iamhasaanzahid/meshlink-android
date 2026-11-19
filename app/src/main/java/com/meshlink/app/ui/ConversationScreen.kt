@@ -707,7 +707,7 @@ fun ConversationScreen(
             text = {
                 Column {
                     Text(
-                        "${group?.members?.size ?: 0} members · ${chat.peer}",
+                        "${group?.members?.size ?: 0} member${if ((group?.members?.size ?: 0) == 1) "" else "s"} · ${chat.peer}",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
