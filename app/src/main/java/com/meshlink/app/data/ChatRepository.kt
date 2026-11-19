@@ -128,7 +128,7 @@ object ChatRepository {
     private fun readMessages(chatId: String): List<Message> {
         val list = ArrayList<Message>()
         val c = db.readableDatabase.rawQuery(
-            "SELECT id, chat_id, from_me, body, ts, transport, status, kind, media_path, media_mime, media_name, media_size FROM messages " +
+            "SELECT id, chat_id, from_me, body, ts, transport, status, kind, media_path, media_mime, media_name, media_size, reaction FROM messages " +
                 "WHERE chat_id = ? ORDER BY ts ASC",
             arrayOf(chatId),
         )
