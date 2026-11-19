@@ -206,16 +206,6 @@ object ChatRepository {
     ): Message? {
         val target = peer.trim()
         if (target.isEmpty() || !file.exists() || file.length() > MAX_MEDIA_BYTES) return null
-        if (GroupStore.isGroup(target)) {
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                android.widget.Toast.makeText(
-                    appContext,
-                    "Group files are coming soon. Text works in groups now.",
-                    android.widget.Toast.LENGTH_LONG,
-                ).show()
-            }
-            return null
-        }
 
         val preview = previewFor(kind, displayName)
         val msg = Message(
@@ -237,7 +227,7 @@ object ChatRepository {
             touchChat(target, resolveName(target, contactName), preview, msg.timestamp, "AUTO", 0)
             refreshMessages(target)
             refreshChats()
-            dispatchMedia(msg)
+            if (GroupStore.isGroup(target)) dispatchGroupMedia(msg) else dispatchMedia(msg)
         }
         return msg
     }
@@ -410,6 +400,47 @@ object ChatRepository {
         refreshChats()
     }
 
+    /** Send one local media bubble to every group member as a normal file transfer. */
+    private fun dispatchGroupMedia(message: Message) {
+        val engine = MeshService.engine
+        val path = message.mediaPath
+        val group = GroupStore.get(message.chatId)
+        if (engine == null || path == null || group == null) {
+            updateStatus(message.id, MsgStatus.FAILED)
+            refreshMessages(message.chatId)
+            return
+        }
+        scope.launch {
+            val bytes = runCatching { java.io.File(path).readBytes() }.getOrNull()
+            if (bytes == null || bytes.isEmpty()) {
+                updateStatus(message.id, MsgStatus.FAILED)
+                refreshMessages(message.chatId)
+                return@launch
+            }
+            var delivered = false
+            group.members.forEach { member ->
+                val perMemberId = UUID.randomUUID().toString()
+                val ok = runCatching {
+                    engine.sendFile(
+                        destination = member,
+                        messageId = perMemberId,
+                        fileName = "${group.id} ${message.mediaName}",
+                        mime = message.mediaMime,
+                        data = bytes,
+                    ) { percent ->
+                        _transferProgress.value = _transferProgress.value +
+                            (message.id to (percent / group.members.size.coerceAtLeast(1)))
+                    }
+                }.getOrDefault(false)
+                if (ok) delivered = true
+            }
+            _transferProgress.value = _transferProgress.value - message.id
+            updateStatus(message.id, if (delivered) MsgStatus.SENT else MsgStatus.FAILED)
+            refreshMessages(message.chatId)
+            refreshChats()
+        }
+    }
+
     /**
      * Streams a photo / document over the mesh. Files never use SMS (the cost
      * would be absurd) and progress is published per message so the bubble can
@@ -556,15 +587,26 @@ object ChatRepository {
         if (!claimIncoming(messageId)) return
         if (exists(messageId)) return
 
+        var chatId = peer
+        var visibleName = name
+        if (name.startsWith("GRP-") && name.length > 14 && name[13] == ' ') {
+            val gid = name.take(13).uppercase()
+            if (GroupStore.isGroup(gid)) {
+                chatId = gid
+                visibleName = name.substring(14)
+                GroupStore.ensure(gid, GroupStore.get(gid)?.name ?: gid, setOf(peer))
+            }
+        }
+
         val kind = when {
             mime.startsWith("image/") -> MsgKind.IMAGE
             mime.startsWith("audio/") -> MsgKind.AUDIO
             else -> MsgKind.DOCUMENT
         }
-        val preview = previewFor(kind, name)
+        val preview = previewFor(kind, visibleName)
         val msg = Message(
             id = messageId,
-            chatId = peer,
+            chatId = chatId,
             fromMe = false,
             body = preview,
             timestamp = System.currentTimeMillis(),
@@ -573,15 +615,16 @@ object ChatRepository {
             kind = kind,
             mediaPath = path,
             mediaMime = mime,
-            mediaName = name,
+            mediaName = visibleName,
             mediaSize = size,
         )
         scope.launch {
             insertMessage(msg)
-            touchChat(peer, resolveName(peer, senderName), preview, msg.timestamp, transport, 1)
-            refreshMessages(peer)
+            touchChat(chatId, GroupStore.get(chatId)?.name
+                ?: resolveName(peer, senderName), preview, msg.timestamp, transport, 1)
+            refreshMessages(chatId)
             refreshChats()
-            val chat = _chats.value.firstOrNull { it.peer == peer }
+            val chat = _chats.value.firstOrNull { it.peer == chatId }
             if (chat != null) onNewMessage?.invoke(msg, chat)
         }
     }

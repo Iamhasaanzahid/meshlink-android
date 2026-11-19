@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.18.0 — 2026-11-18
+
+### Added
+- **Photos, documents and voice notes in groups.** Pick media in a group chat
+  and it is streamed to every member with the same encrypted file transfer
+  used in one-to-one chats. Incoming group media lands in the group chat with
+  the real file name.
+
 ## 1.17.0 — 2026-11-18
 
 ### Added
