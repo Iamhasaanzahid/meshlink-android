@@ -136,6 +136,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
+                        val relayError = status["onlineError"] as? String ?: ""
                         Text(
                             "Worldwide messaging",
                             fontWeight = FontWeight.SemiBold,
@@ -145,6 +146,7 @@ fun SettingsScreen(
                             when {
                                 !onlineEnabled -> "Off · local radios only"
                                 onlineConnected -> "Connected · messages anywhere in the world"
+                                relayError.isNotBlank() -> "Retrying another route · $relayError"
                                 else -> "Connecting to the relay…"
                             },
                             fontSize = 12.sp,
@@ -162,6 +164,20 @@ fun SettingsScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = {
+                            brokerDraft = com.meshlink.app.mesh.OnlineTransport.DEFAULT_BROKER
+                            onSaveBroker(brokerDraft)
+                        }) { Text("Default") }
+                        TextButton(onClick = {
+                            brokerDraft = "wss://broker.hivemq.com:8884/mqtt"
+                            onSaveBroker(brokerDraft)
+                        }) { Text("WebSocket") }
+                        TextButton(onClick = {
+                            brokerDraft = "tcp://broker.hivemq.com:1883"
+                            onSaveBroker(brokerDraft)
+                        }) { Text("TCP") }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = { onSaveBroker(brokerDraft) }) { Text("Save relay") }
                         Spacer(Modifier.weight(1f))
@@ -272,7 +288,8 @@ fun SettingsScreen(
                 InfoRow(
                     "Cellular radio (SMS)",
                     if (status["radioSmsAvailable"] == true) "SIM ready · works anywhere with signal"
-                    else "No SIM detected",
+                    else if (status["smsFallbackEnabled"] == true) "SMS permission or SIM not ready"
+                    else "Off · enable SMS fallback below",
                     status["radioSmsAvailable"] == true,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.24.0 — 2026-11-19 — hybrid transport hardening
+
+### Fixed
+- **Mobile-data relay fallback.** Online mode no longer gets stuck on one
+  broker. If `ssl://broker.hivemq.com:8883` is blocked by a carrier, MeshLink
+  rotates through WebSocket (`wss://…:8884/mqtt`), plain WebSocket
+  (`ws://…:8000/mqtt`) and TCP (`tcp://…:1883`). On cellular links it starts
+  with the WebSocket/TLS route. Settings now shows the last relay error and
+  has one-tap broker presets.
+- **SMS fallback routing.** Phone numbers are normalized, so formatted values
+  such as `+92 300 1234567` or `0300-1234567` now work. Saved contacts that
+  use a phone number as their address are used as an SMS route too.
+- **SMS readiness and dual SIM.** The status check now verifies SMS permission
+  and the default SMS subscription instead of only checking that a phone type
+  exists, and sends use the SMS-capable subscription.
+- **SMS chunking.** Smaller protocol chunks prevent a MeshLink frame from
+  being split again by `SmsManager`, which previously broke reassembly.
+
 ## 1.23.0 — 2026-11-19
 
 ### Added

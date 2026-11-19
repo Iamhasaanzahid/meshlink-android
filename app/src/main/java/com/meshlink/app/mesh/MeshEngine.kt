@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.wifi.p2p.WifiP2pDevice
 import android.util.Log
 import com.meshlink.app.data.MeshSettings
+import com.meshlink.app.util.PermissionsHelper
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -395,7 +396,13 @@ class MeshEngine(private val context: Context) {
 
     /** True when [destination] can be dialled/SMSed over the cellular radio. */
     fun isRadioNumber(destination: String): Boolean =
-        destination.trim().matches(Regex("^\\+?[0-9]{7,15}$"))
+        normalizeNumber(destination).matches(Regex("^\\+?[0-9]{7,15}$"))
+
+    /** Accepts formatted numbers such as "+92 300 1234567" or "0300-1234567". */
+    fun normalizeNumber(value: String): String =
+        value.trim()
+            .replace(Regex("[\\s\\-().]"), "")
+            .replace(Regex("(?!^)\\+"), "")
 
     fun sendFrame(destination: String, frame: ByteArray, transport: TransportType): Boolean =
         when (transport) {
@@ -417,8 +424,8 @@ class MeshEngine(private val context: Context) {
         // phone number, use it for the SMS hop so a message can cross the
         // country when no mesh peer is in range.
         val smsTo = when {
-            !smsNumber.isNullOrBlank() && isRadioNumber(smsNumber) -> smsNumber.trim()
-            isRadioNumber(destination) -> destination.trim()
+            !smsNumber.isNullOrBlank() && isRadioNumber(smsNumber) -> normalizeNumber(smsNumber)
+            isRadioNumber(destination) -> normalizeNumber(destination)
             else -> null
         }
 
@@ -450,6 +457,7 @@ class MeshEngine(private val context: Context) {
         // user has to switch it on in Settings and grant the SMS permission.
         if (allowSms && smsTo != null &&
             MeshSettings.smsFallback(context) &&
+            PermissionsHelper.smsGranted(context) &&
             RadioTransport.isAvailable(context)
         ) {
             if (sendAll(frames) { RadioTransport.sendFrame(context, smsTo, it) }) return true
@@ -1163,6 +1171,7 @@ class MeshEngine(private val context: Context) {
         "onlineEnabled" to MeshSettings.onlineEnabled(context),
         "onlineConnected" to (online?.isConnected == true),
         "onlineBroker" to MeshSettings.onlineBroker(context),
+        "onlineError" to (online?.lastError ?: ""),
     )
 
     // ------------------------------------------------------------------- utils

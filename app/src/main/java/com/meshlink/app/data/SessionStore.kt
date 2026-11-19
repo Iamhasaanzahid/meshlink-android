@@ -49,7 +49,10 @@ object SessionStore {
     }
 
     fun savePhone(context: Context, phone: String) {
-        prefs(context).edit().putString(KEY_PHONE, phone.trim()).apply()
+        val clean = phone.trim()
+            .replace(Regex("[\\s\\-().]"), "")
+            .replace(Regex("(?!^)\\+"), "")
+        prefs(context).edit().putString(KEY_PHONE, clean).apply()
     }
 
     fun save(context: Context, uin: String, displayName: String = "") {

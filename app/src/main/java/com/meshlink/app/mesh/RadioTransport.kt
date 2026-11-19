@@ -3,9 +3,11 @@ package com.meshlink.app.mesh
 import android.content.Context
 import android.os.Build
 import android.telephony.SmsManager
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.Base64
 import android.util.Log
+import com.meshlink.app.util.PermissionsHelper
 import java.security.SecureRandom
 
 /**
@@ -36,7 +38,7 @@ object RadioTransport {
 
     private const val TAG = "MeshLinkRadio"
     private const val PREFIX = "ML1"
-    private const val SMS_MAX_CHARS = 150
+    private const val SMS_MAX_CHARS = 130
     private const val REASSEMBLY_TIMEOUT_MS = 5 * 60 * 1000L
 
     var onFrame: ((from: String, bytes: ByteArray) -> Unit)? = null
@@ -66,15 +68,23 @@ object RadioTransport {
     // ---------------------------------------------------------------- status
 
     fun isAvailable(context: Context): Boolean {
+        if (!PermissionsHelper.smsGranted(context)) return false
+        val subId = smsSubscriptionId(context)
+        if (subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) return true
         val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
             ?: return false
-        return tm.phoneType != TelephonyManager.PHONE_TYPE_NONE
+        return tm.phoneType != TelephonyManager.PHONE_TYPE_NONE &&
+            tm.simState == TelephonyManager.SIM_STATE_READY
     }
 
-    fun hasSmsCapability(context: Context): Boolean {
-        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            ?: return false
-        return tm.phoneType != TelephonyManager.PHONE_TYPE_NONE
+    fun hasSmsCapability(context: Context): Boolean = isAvailable(context)
+
+    private fun smsSubscriptionId(context: Context): Int = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            SubscriptionManager.getDefaultSmsSubscriptionId()
+        } else SubscriptionManager.INVALID_SUBSCRIPTION_ID
+    } catch (t: Throwable) {
+        SubscriptionManager.INVALID_SUBSCRIPTION_ID
     }
 
     // ------------------------------------------------------------------ send
@@ -117,12 +127,21 @@ object RadioTransport {
         var ok = true
         chunks.forEachIndexed { i, data ->
             val body = "$PREFIX|$kind|$msgId|${i + 1}|${chunks.size}|$data"
-            ok = ok && sendOne(smsManager, destination, body)
+            ok = ok && sendOne(context, smsManager, destination, body)
         }
         return ok
     }
 
-    private fun sendOne(smsManager: SmsManager, destination: String, body: String): Boolean {
+    private fun sendOne(
+        context: Context,
+        smsManager: SmsManager,
+        destination: String,
+        body: String,
+    ): Boolean {
+        if (!PermissionsHelper.smsGranted(context)) {
+            Log.w(TAG, "SMS send skipped: SEND_SMS permission not granted")
+            return false
+        }
         return try {
             val parts = smsManager.divideMessage(body)
             if (parts.size <= 1) {
@@ -131,6 +150,9 @@ object RadioTransport {
                 smsManager.sendMultipartTextMessage(destination, null, parts, null, null)
             }
             true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SMS permission denied at send time", e)
+            false
         } catch (t: Throwable) {
             Log.w(TAG, "SMS send failed to $destination", t)
             false
@@ -195,7 +217,12 @@ object RadioTransport {
     // ---------------------------------------------------------------- utils
 
     private fun smsManager(context: Context): SmsManager? = try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val subId = smsSubscriptionId(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 &&
+            subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID
+        ) {
+            SmsManager.getSmsManagerForSubscriptionId(subId)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             context.getSystemService(SmsManager::class.java)
         } else {
             @Suppress("DEPRECATION")

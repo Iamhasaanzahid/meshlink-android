@@ -1,6 +1,8 @@
 package com.meshlink.app.mesh
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
@@ -34,6 +36,13 @@ class OnlineTransport(private val context: Context) {
         private const val TAG = "MeshLinkOnline"
         private const val TOPIC_ROOT = "meshlink/v1"
         const val DEFAULT_BROKER = "ssl://broker.hivemq.com:8883"
+        // Some mobile carriers block outbound 8883/MQTT. Paho supports these
+        // URI schemes natively, so we rotate instead of getting stuck forever.
+        private val FALLBACK_BROKERS = listOf(
+            "wss://broker.hivemq.com:8884/mqtt",
+            "ws://broker.hivemq.com:8000/mqtt",
+            "tcp://broker.hivemq.com:1883",
+        )
     }
 
     /** A decrypted frame arrived from [fromUin]. */
@@ -79,6 +88,15 @@ class OnlineTransport(private val context: Context) {
     @Volatile
     private var brokerUrl: String = ""
 
+    /** Endpoint currently attempted (may differ from the configured one). */
+    @Volatile
+    private var currentBroker: String = ""
+
+    /** Last connection error, surfaced in Settings. */
+    @Volatile
+    var lastError: String = ""
+        private set
+
     @Volatile
     private var stopped: Boolean = true
 
@@ -92,11 +110,11 @@ class OnlineTransport(private val context: Context) {
         val me = uin.trim().uppercase()
         val url = broker.trim().ifBlank { DEFAULT_BROKER }
         if (me.isBlank()) return
-        if (!stopped && me == this.uin && url == brokerUrl) return
-
         stop()
         this.uin = me
         brokerUrl = url
+        currentBroker = initialBroker(url)
+        lastError = ""
         stopped = false
         retryThread = thread(name = "meshlink-online", isDaemon = true) {
             connectLoop()
@@ -141,6 +159,30 @@ class OnlineTransport(private val context: Context) {
 
     // ------------------------------------------------------------- connection
 
+    private fun onCellular(): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return false
+            val network = cm.activeNetwork ?: return false
+            cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+        } catch (t: Throwable) {
+            false
+        }
+    }
+
+    private fun initialBroker(configured: String): String {
+        if (configured != DEFAULT_BROKER) return configured
+        // Start on the WebSocket/TLS candidate when the active link is cellular.
+        return if (onCellular()) FALLBACK_BROKERS.first() else configured
+    }
+
+    private fun rotateBroker() {
+        if (brokerUrl != DEFAULT_BROKER) return
+        val candidates = listOf(DEFAULT_BROKER) + FALLBACK_BROKERS
+        val next = candidates.indexOf(currentBroker) + 1
+        currentBroker = candidates[if (next >= candidates.size) 0 else next]
+    }
+
     private fun connectLoop() {
         var failedAttempts = 0
         while (!stopped) {
@@ -150,7 +192,7 @@ class OnlineTransport(private val context: Context) {
                 // A timestamp suffix keeps a fast reconnect from being seen as
                 // a duplicate client id by the broker.
                 c = MqttClient(
-                    brokerUrl,
+                    currentBroker,
                     "meshlink-$me-${System.currentTimeMillis() % 1_000_000}",
                     MemoryPersistence(),
                 )
@@ -158,6 +200,7 @@ class OnlineTransport(private val context: Context) {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                         if (stopped) return
                         isConnected = true
+                        lastError = ""
                         // cleanSession=true drops subscriptions on reconnect.
                         c?.let { resubscribe(it) }
                         Log.i(TAG, "connected to $serverURI (reconnect=$reconnect)")
@@ -186,12 +229,13 @@ class OnlineTransport(private val context: Context) {
                 isConnected = true
                 failedAttempts = 0
                 resubscribe(c)
-                Log.i(TAG, "online mode ready on $brokerUrl as $me")
+                Log.i(TAG, "online mode ready on $currentBroker as $me")
                 // Stay here until the socket drops or the user switches off.
                 while (!stopped && c.isConnected) Thread.sleep(500)
             } catch (t: Throwable) {
                 isConnected = false
-                Log.w(TAG, "connect failed: ${t.message}")
+                lastError = "${t.javaClass.simpleName}: ${t.message ?: "unknown"}"
+                Log.w(TAG, "connect failed on $currentBroker: $lastError")
             } finally {
                 isConnected = false
                 if (client === c) client = null
@@ -200,6 +244,7 @@ class OnlineTransport(private val context: Context) {
             }
             if (!stopped) {
                 failedAttempts++
+                if (failedAttempts % 2 == 0) rotateBroker()
                 // 2 s, 4 s, 8 s, 15 s (max) plus jitter. Hammering a public
                 // broker with a reconnect every 3 s gets the client throttled.
                 val step = (failedAttempts - 1).coerceIn(0, 3)

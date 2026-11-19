@@ -783,13 +783,18 @@ object ChatRepository {
         }
     }
 
+    private fun normalizePhone(value: String): String = value.trim()
+        .replace(Regex("[\\s\\-().]"), "")
+        .replace(Regex("(?!^)\\+"), "")
+
     /** Remembers a phone number shared by a mesh peer, for the SMS fallback. */
     private fun savePhoneAlias(peer: String, phone: String) {
-        if (!phone.trim().matches(Regex("^\\+?[0-9]{7,15}$"))) return
+        val clean = normalizePhone(phone)
+        if (!clean.matches(Regex("^\\+?[0-9]{7,15}$"))) return
         runCatching {
             db.writableDatabase.execSQL(
                 "UPDATE chats SET phone = ? WHERE peer = ?",
-                arrayOf(phone.trim(), peer),
+                arrayOf(clean, peer),
             )
         }
     }
@@ -797,11 +802,24 @@ object ChatRepository {
     /** The SMS address of a chat, if the other side has shared one. */
     fun phoneFor(peer: String): String {
         if (!initialised) return ""
-        return runCatching {
+        val fromChat = runCatching {
             db.readableDatabase.rawQuery(
                 "SELECT phone FROM chats WHERE peer = ? LIMIT 1",
                 arrayOf(peer),
             ).use { c -> if (c.moveToFirst()) c.getString(0) ?: "" else "" }
+        }.getOrDefault("")
+        if (fromChat.isNotBlank()) return normalizePhone(fromChat)
+        // A contact saved with a phone number as its address is also a valid
+        // SMS route (contacts may otherwise store a UIN, which is not dialable).
+        return runCatching {
+            db.readableDatabase.rawQuery(
+                "SELECT address FROM contacts WHERE address = ? LIMIT 1",
+                arrayOf(peer),
+            ).use { c ->
+                val value = if (c.moveToFirst()) c.getString(0) ?: "" else ""
+                val clean = normalizePhone(value)
+                if (clean.matches(Regex("^\\+?[0-9]{7,15}$"))) clean else ""
+            }
         }.getOrDefault("")
     }
 
