@@ -31,6 +31,8 @@ data class Message(
     val mediaMime: String = "",
     val mediaName: String = "",
     val mediaSize: Long = 0,
+    /** One emoji reaction received for this message, if any. */
+    val reaction: String = "",
 )
 
 /** A conversation row in the chat list. */

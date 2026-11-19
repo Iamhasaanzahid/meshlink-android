@@ -701,6 +701,19 @@ fun ConversationScreen(
             title = { Text("Message") },
             text = {
                 Column {
+                    Text(
+                        "React",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        listOf("❤️", "👍", "😂", "😮", "😢", "🙏").forEach { emoji ->
+                            TextButton(onClick = {
+                                ChatRepository.sendReaction(m, emoji)
+                                selectedMessage = null
+                            }) { Text(emoji, fontSize = 22.sp) }
+                        }
+                    }
                     TextButton(onClick = {
                         replyTo = m
                         selectedMessage = null
@@ -927,6 +940,20 @@ private fun MessageBubble(
                     fontSize = 15.sp,
                     color = if (message.fromMe) Color.White else Color(0xFF1D1B20),
                 )
+            }
+
+            if (message.reaction.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.White.copy(alpha = 0.92f),
+                ) {
+                    Text(
+                        message.reaction,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
 
             if (message.fromMe && message.status == MsgStatus.SENDING &&

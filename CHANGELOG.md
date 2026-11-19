@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.0 — 2026-11-18
+
+### Added
+- **Message reactions.** Long-press any bubble and tap ❤️, 👍, 😂, 😮, 😢 or 🙏.
+  The emoji shows on the bubble on both phones, in private chats and groups,
+  travelling as a tiny encrypted control message.
+
 ## 1.18.0 — 2026-11-18
 
 ### Added

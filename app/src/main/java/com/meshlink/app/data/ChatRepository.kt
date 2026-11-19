@@ -149,6 +149,7 @@ object ChatRepository {
                     mediaMime = it.getString(9),
                     mediaName = it.getString(10),
                     mediaSize = it.getLong(11),
+                    reaction = it.getString(12) ?: "",
                 )
             }
         }
@@ -230,6 +231,42 @@ object ChatRepository {
             if (GroupStore.isGroup(target)) dispatchGroupMedia(msg) else dispatchMedia(msg)
         }
         return msg
+    }
+
+    /** Send an emoji reaction over the same path as the original chat. */
+    fun sendReaction(message: Message, emoji: String) {
+        val targetChat = message.chatId
+        val targets = if (GroupStore.isGroup(targetChat)) {
+            GroupStore.get(targetChat)?.members?.toList().orEmpty()
+        } else listOf(targetChat)
+        if (targets.isEmpty()) return
+        val wire = "MLR1|$targetChat|${message.id}|${emoji.take(8)}"
+        val sender = appContext?.let { SessionStore.displayName(it) }.orEmpty()
+        targets.forEach { peer ->
+            scope.launch {
+                MeshService.engine?.sendMessage(
+                    destination = peer,
+                    messageId = UUID.randomUUID().toString(),
+                    body = wire,
+                    senderName = sender,
+                    allowSms = false,
+                )
+            }
+        }
+        scope.launch {
+            applyReaction(message.id, emoji.take(8))
+        }
+    }
+
+    private fun applyReaction(messageId: String, emoji: String) {
+        val c = db.readableDatabase.rawQuery(
+            "SELECT chat_id FROM messages WHERE id = ? LIMIT 1", arrayOf(messageId),
+        )
+        val chatId = c.use { if (it.moveToFirst()) it.getString(0) else null } ?: return
+        db.writableDatabase.execSQL(
+            "UPDATE messages SET reaction = ? WHERE id = ?", arrayOf(emoji, messageId),
+        )
+        refreshMessages(chatId)
     }
 
     /** Create a group and invite each member over the online relay / mesh. */
@@ -510,6 +547,12 @@ object ChatRepository {
         val peer = from.trim()
         if (peer.isEmpty() || body.isEmpty()) return
 
+        if (body.startsWith("MLR1|")) {
+            val parts = body.split("|", limit = 4)
+            if (parts.size == 4) applyReaction(parts[2], parts[3].take(8))
+            return
+        }
+
         if (body.startsWith("MLGINV|")) {
             val parts = body.split("|", limit = 4)
             if (parts.size >= 3 && GroupStore.isGroup(parts[1])) {
@@ -681,6 +724,7 @@ object ChatRepository {
                 "media_mime" to msg.mediaMime,
                 "media_name" to msg.mediaName,
                 "media_size" to msg.mediaSize,
+                "reaction" to msg.reaction,
             ),
             android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE,
         )
