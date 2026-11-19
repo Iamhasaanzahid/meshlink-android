@@ -111,6 +111,28 @@ object ChatRepository {
         scope.launch {
             db.writableDatabase.execSQL("UPDATE chats SET unread = 0 WHERE peer = ?", arrayOf(peer))
             refreshChats()
+            if (!GroupStore.isGroup(peer)) sendReadReceipts(peer)
+        }
+    }
+
+    /** Tell the sender that their messages were actually opened. */
+    private fun sendReadReceipts(peer: String) {
+        if (peer.isBlank()) return
+        val ids = ArrayList<String>()
+        db.readableDatabase.rawQuery(
+            "SELECT id FROM messages WHERE chat_id = ? AND from_me = 0 AND status = ?",
+            arrayOf(peer, MsgStatus.RECEIVED.name),
+        ).use { while (it.moveToNext()) ids.add(it.getString(0)) }
+        if (ids.isEmpty()) return
+        val sender = appContext?.let { SessionStore.displayName(it) }.orEmpty()
+        ids.forEach { id ->
+            MeshService.engine?.sendMessage(
+                destination = peer,
+                messageId = UUID.randomUUID().toString(),
+                body = "MLRD|$id",
+                senderName = sender,
+                allowSms = false,
+            )
         }
     }
 
@@ -547,6 +569,11 @@ object ChatRepository {
         val peer = from.trim()
         if (peer.isEmpty() || body.isEmpty()) return
 
+        if (body.startsWith("MLRD|")) {
+            applyReadReceipt(body.removePrefix("MLRD|").trim())
+            return
+        }
+
         if (body.startsWith("MLR1|")) {
             val parts = body.split("|", limit = 4)
             if (parts.size == 4) applyReaction(parts[2], parts[3].take(8))
@@ -672,12 +699,29 @@ object ChatRepository {
         }
     }
 
+    private fun applyReadReceipt(messageId: String) {
+        if (messageId.isBlank()) return
+        val c = db.readableDatabase.rawQuery(
+            "SELECT chat_id FROM messages WHERE id = ? LIMIT 1", arrayOf(messageId),
+        )
+        val chatId = c.use { if (it.moveToFirst()) it.getString(0) else null } ?: return
+        db.writableDatabase.execSQL(
+            "UPDATE messages SET status = ? WHERE id = ? AND from_me = 1",
+            arrayOf(MsgStatus.READ.name, messageId),
+        )
+        refreshMessages(chatId)
+        refreshChats()
+    }
+
     /** The other phone confirmed it received [messageId] (double tick). */
     fun onDelivered(messageId: String) {
         scope.launch {
             db.writableDatabase.execSQL(
-                "UPDATE messages SET status = ? WHERE id = ? AND status != ?",
-                arrayOf(MsgStatus.DELIVERED.name, messageId, MsgStatus.RECEIVED.name),
+                "UPDATE messages SET status = ? WHERE id = ? AND status NOT IN (?, ?)",
+                arrayOf(
+                    MsgStatus.DELIVERED.name, messageId,
+                    MsgStatus.RECEIVED.name, MsgStatus.READ.name,
+                ),
             )
             val chatId = db.readableDatabase.rawQuery(
                 "SELECT chat_id FROM messages WHERE id = ?", arrayOf(messageId),

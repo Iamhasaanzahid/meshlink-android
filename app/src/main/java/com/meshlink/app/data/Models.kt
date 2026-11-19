@@ -8,6 +8,8 @@ enum class MsgStatus {
     SENT,
     /** The other phone confirmed receipt (double tick). */
     DELIVERED,
+    /** The other person opened the chat and saw it (blue double tick). */
+    READ,
     /** Incoming message. */
     RECEIVED,
     /** No radio could carry it. Tap to retry. */

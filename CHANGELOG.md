@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.20.0 — 2026-11-19
+
+### Added
+- **Read receipts.** When the other person opens the chat, your double tick
+  turns blue and the message info says Read. Receipts travel as a tiny
+  encrypted control message, only when the chat is actually opened, and never
+  downgrade an already-read message.
+
 ## 1.19.0 — 2026-11-18
 
 ### Added

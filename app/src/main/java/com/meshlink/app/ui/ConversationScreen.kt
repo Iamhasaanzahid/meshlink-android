@@ -149,6 +149,7 @@ fun ConversationScreen(
     var highlightId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(chat.peer) { ChatRepository.markRead(chat.peer) }
+    LaunchedEffect(messages.size, chat.peer) { ChatRepository.markRead(chat.peer) }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
@@ -775,6 +776,7 @@ fun ConversationScreen(
                             MsgStatus.SENDING -> "Sending"
                             MsgStatus.SENT -> "Sent"
                             MsgStatus.DELIVERED -> "Delivered"
+                            MsgStatus.READ -> "Read"
                             MsgStatus.FAILED -> "Failed — tap the bubble to retry"
                             MsgStatus.RECEIVED -> "Received"
                         },
@@ -994,7 +996,7 @@ private fun MessageBubble(
                         fontSize = 10.sp,
                         color = when (message.status) {
                             MsgStatus.FAILED -> Color(0xFFFFB4AB)
-                            MsgStatus.DELIVERED -> TickBlue
+                            MsgStatus.DELIVERED, MsgStatus.READ -> TickBlue
                             else -> Color.White.copy(alpha = 0.85f)
                         },
                         fontWeight = FontWeight.Bold,
@@ -1065,7 +1067,7 @@ private fun formatBytes(bytes: Long): String = when {
 private fun ticks(status: MsgStatus): String = when (status) {
     MsgStatus.SENDING -> "◷"
     MsgStatus.SENT -> "✓"
-    MsgStatus.DELIVERED -> "✓✓"
+    MsgStatus.DELIVERED, MsgStatus.READ -> "✓✓"
     MsgStatus.FAILED -> "Retry"
     MsgStatus.RECEIVED -> ""
 }
