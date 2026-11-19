@@ -1,6 +1,7 @@
 package com.meshlink.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,7 +72,12 @@ fun initials(name: String): String {
 // ------------------------------------------------------------------- avatar
 
 @Composable
-fun Avatar(name: String, size: Dp = 48.dp, showOnline: Boolean = false) {
+fun Avatar(
+    name: String,
+    size: Dp = 48.dp,
+    showOnline: Boolean = false,
+    photoPath: String? = null,
+) {
     val base = avatarColor(name)
     val deep = Color(
         red = base.red * 0.72f,
@@ -89,12 +97,31 @@ fun Avatar(name: String, size: Dp = 48.dp, showOnline: Boolean = false) {
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = initials(name),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = (size.value * 0.36f).sp,
-            )
+            val bitmap = remember(photoPath) {
+                photoPath?.let { path ->
+                    runCatching {
+                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                        android.graphics.BitmapFactory.decodeFile(path, opts)
+                    }.getOrNull()
+                }
+            }
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(size)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Text(
+                    text = initials(name),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = (size.value * 0.36f).sp,
+                )
+            }
         }
         if (showOnline) {
             Box(

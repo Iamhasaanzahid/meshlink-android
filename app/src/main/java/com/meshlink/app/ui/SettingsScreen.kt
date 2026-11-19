@@ -42,6 +42,9 @@ import com.meshlink.app.BuildConfig
 fun SettingsScreen(
     myUin: String,
     displayName: String,
+    avatarPath: String? = null,
+    onPickAvatar: () -> Unit = {},
+    onRemoveAvatar: () -> Unit = {},
     status: Map<String, Any>,
     wifiPeers: List<WifiP2pDevice>,
     maxHops: Int,
@@ -85,7 +88,9 @@ fun SettingsScreen(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Avatar(displayName.ifBlank { myUin }, 64.dp)
+                Box(modifier = Modifier.clickable { onPickAvatar() }) {
+                    Avatar(displayName.ifBlank { myUin }, 64.dp, photoPath = avatarPath)
+                }
                 Spacer(Modifier.padding(14.dp, 0.dp, 0.dp, 0.dp))
                 Column {
                     Text(
@@ -106,6 +111,14 @@ fun SettingsScreen(
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                     )
+                    Row {
+                        TextButton(onClick = onPickAvatar) {
+                            Text(if (avatarPath == null) "Add photo" else "Change photo")
+                        }
+                        if (avatarPath != null) {
+                            TextButton(onClick = onRemoveAvatar) { Text("Remove") }
+                        }
+                    }
                 }
             }
         }

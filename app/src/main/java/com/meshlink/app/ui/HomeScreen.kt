@@ -112,6 +112,7 @@ fun HomeScreen(
     var groupDialog by remember { mutableStateOf(false) }
     var groupName by remember { mutableStateOf("") }
     var groupMembers by remember { mutableStateOf("") }
+    var avatarPath by remember { mutableStateOf(SessionStore.avatarPath(context)) }
     var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingVideoCall by remember { mutableStateOf<Pair<String, String>?>(null) }
     var videoCallWanted by remember { mutableStateOf(false) }
@@ -229,6 +230,23 @@ fun HomeScreen(
                 "The relay is still connecting. Try again in a few seconds.",
                 Toast.LENGTH_LONG,
             ).show()
+        }
+    }
+
+    val avatarLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val file = withContext(Dispatchers.IO) { com.meshlink.app.util.MediaFiles.importImage(context, uri) }
+                if (file != null) {
+                    SessionStore.saveAvatarPath(context, file.absolutePath)
+                    avatarPath = file.absolutePath
+                    Toast.makeText(context, "Profile photo saved on this phone", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Could not read that photo", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -437,7 +455,7 @@ fun HomeScreen(
                                     Icon(Icons.Filled.Add, contentDescription = "New group",
                                         tint = if (tab == 0) Color.White else Color.White.copy(alpha = 0.4f))
                                 }
-                                Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline)
+                                Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline, photoPath = avatarPath)
                             }
                         }
                         if (tab == 0) {
@@ -632,6 +650,12 @@ fun HomeScreen(
                     else -> SettingsScreen(
                         myUin = myUin,
                         displayName = displayName,
+                        avatarPath = avatarPath,
+                        onPickAvatar = { avatarLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        onRemoveAvatar = {
+                            SessionStore.saveAvatarPath(context, null)
+                            avatarPath = null
+                        },
                         status = status,
                         wifiPeers = wifiPeers,
                         maxHops = maxHops,

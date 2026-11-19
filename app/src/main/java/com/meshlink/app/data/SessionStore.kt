@@ -13,6 +13,7 @@ object SessionStore {
     private const val KEY_UIN = "uin"
     private const val KEY_NAME = "display_name"
     private const val KEY_PHONE = "phone_number"
+    private const val KEY_AVATAR = "avatar_path"
     private const val KEY_PRIVACY = "privacy_seen"
 
     private fun prefs(context: Context) =
@@ -38,6 +39,14 @@ object SessionStore {
      */
     fun phone(context: Context): String =
         prefs(context).getString(KEY_PHONE, "") ?: ""
+
+    /** Profile photo lives in app-private storage; nothing is uploaded. */
+    fun avatarPath(context: Context): String? =
+        prefs(context).getString(KEY_AVATAR, null)?.takeIf { it.isNotBlank() }
+
+    fun saveAvatarPath(context: Context, path: String?) {
+        prefs(context).edit().putString(KEY_AVATAR, path?.takeIf { it.isNotBlank() }).apply()
+    }
 
     fun savePhone(context: Context, phone: String) {
         prefs(context).edit().putString(KEY_PHONE, phone.trim()).apply()
