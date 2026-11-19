@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.26.2 — 2026-11-19 — security hardening
+
+### Changed
+- Disabled app backup and cleartext network traffic outside explicit local dev hosts.
+- Restricted the boot receiver to this app only.
+- Hardened web and Worker responses: unknown URLs now return a real 404,
+  additional security headers, constant-time pairing token checks, and rate
+  limits on pairing endpoints.
+
 ## 1.26.1 — 2026-11-19 — manual web pairing
 
 ### Added
