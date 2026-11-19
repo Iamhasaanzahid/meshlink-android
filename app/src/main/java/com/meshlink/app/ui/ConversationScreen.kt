@@ -99,6 +99,7 @@ import com.meshlink.app.data.ChatRepository
 import com.meshlink.app.data.Message
 import com.meshlink.app.data.MsgKind
 import com.meshlink.app.data.MsgStatus
+import com.meshlink.app.service.MeshService
 import com.meshlink.app.util.MediaFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -117,6 +118,10 @@ fun ConversationScreen(
     val scope = rememberCoroutineScope()
     val messages by ChatRepository.messagesFor(chat.peer).collectAsState()
     val allChats by ChatRepository.chats.collectAsState()
+    val typingMap by ChatRepository.typing.collectAsState()
+    var peerTyping by remember { mutableStateOf(false) }
+    var lastTypingSent by remember { mutableStateOf(false) }
+    var lastTypingAt by remember { mutableStateOf(0L) }
     val progress by ChatRepository.transferProgress.collectAsState()
     val listState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
@@ -143,6 +148,23 @@ fun ConversationScreen(
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
+    LaunchedEffect(typingMap, chat.peer) {
+        while (true) {
+            val ts = ChatRepository.typing.value[chat.peer.uppercase()]
+            peerTyping = ts != null && System.currentTimeMillis() - ts < 6_000
+            delay(1_000)
+        }
+    }
+
+    fun pushTyping(active: Boolean) {
+        if (active == lastTypingSent) return
+        val now = System.currentTimeMillis()
+        if (active && now - lastTypingAt < 1_500) return
+        lastTypingSent = active
+        lastTypingAt = now
+        MeshService.engine?.sendTyping(chat.peer, active)
+    }
+
     fun sendComposed() {
         val body = text.trim()
         if (body.isEmpty()) return
@@ -151,6 +173,7 @@ fun ConversationScreen(
         ChatRepository.sendText(chat.peer, outgoing, chat.name)
         text = ""
         replyTo = null
+        pushTyping(false)
     }
 
     fun sendPickedImage(uri: Uri) {
@@ -331,9 +354,10 @@ fun ConversationScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "MeshLink ID · ${chat.peer}",
+                                if (peerTyping) "typing…" else "MeshLink ID · ${chat.peer}",
                                 fontSize = 11.sp,
-                                color = Color.White.copy(alpha = 0.75f),
+                                color = if (peerTyping) BrandMint else Color.White.copy(alpha = 0.75f),
+                                fontWeight = if (peerTyping) FontWeight.SemiBold else FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -470,7 +494,7 @@ fun ConversationScreen(
                     } else {
                         OutlinedTextField(
                             value = text,
-                            onValueChange = { text = it },
+                            onValueChange = { text = it; pushTyping(it.isNotBlank()) },
                             modifier = Modifier.weight(1f),
                             placeholder = { Text("Message") },
                             shape = RoundedCornerShape(24.dp),

@@ -97,6 +97,9 @@ class MeshEngine(private val context: Context) {
     /** WebRTC signalling for internet calls, carried inside online mode. */
     var onCallSignal: ((from: String, json: String) -> Unit)? = null
 
+    /** The other side started or stopped typing (online mode only). */
+    var onTyping: ((from: String, typing: Boolean) -> Unit)? = null
+
     private val ble = BleTransport(context)
     private val wifi = WifiDirectTransport(context)
     private val lan = LanTransport(context)
@@ -298,6 +301,7 @@ class MeshEngine(private val context: Context) {
         if (!heardRecently(receiver)) return
         val frame = MeshFrame.deserialize(bytes) ?: return
         if (frame.type == MeshFrame.TYPE_FILE_META || frame.type == MeshFrame.TYPE_FILE_CHUNK) return
+        if (frame.type == MeshFrame.TYPE_TYPING) return
         if (frame.type == MeshFrame.TYPE_BRIDGE) {
             val dest = BridgeFrames.parse(frame.payload)?.destination
             if (dest == null || !dest.equals(receiver, ignoreCase = true)) return
@@ -332,6 +336,26 @@ class MeshEngine(private val context: Context) {
             runCatching { t.publish(destination, bytes, 1) }
         }
         return true
+    }
+
+    /**
+     * Typing indicator. Deliberately online-only: sending a frame per
+     * keystroke over Bluetooth/Wi-Fi would waste radio airtime for a status
+     * that expires in seconds.
+     */
+    fun sendTyping(destination: String, typing: Boolean): Boolean {
+        val dest = destination.trim().uppercase()
+        if (!dest.startsWith("OFF-")) return false
+        val t = online ?: return false
+        if (!t.isConnected) return false
+        val frame = MeshFrame.Frame(
+            type = MeshFrame.TYPE_TYPING,
+            sourceNodeId = localNodeId,
+            destNodeId = MeshFrame.nodeId16(dest),
+            ttl = hops(),
+            payload = byteArrayOf(if (typing) 1 else 0),
+        ).serialize()
+        return publishOnline(dest, listOf(frame))
     }
 
     /** WebRTC offer / answer / ICE, delivered through online mode. */
@@ -953,6 +977,8 @@ class MeshEngine(private val context: Context) {
                 MeshFrame.TYPE_FILE_META -> handleFileMeta(fromAddress, frame.payload, transport)
                 MeshFrame.TYPE_FILE_CHUNK -> handleFileChunk(fromAddress, frame.payload, transport)
                 MeshFrame.TYPE_BRIDGE -> handleBridge(fromAddress, frame.payload, transport)
+                MeshFrame.TYPE_TYPING ->
+                    onTyping?.invoke(fromAddress, frame.payload.firstOrNull()?.toInt() == 1)
                 else -> Unit
             }
             return

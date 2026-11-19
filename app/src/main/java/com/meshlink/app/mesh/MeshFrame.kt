@@ -44,6 +44,8 @@ object MeshFrame {
 
     /** Multi-hop + internet bridge envelope, see [BridgeFrames]. */
     const val TYPE_BRIDGE: Byte = 0x09
+    /** "I am typing" / "I stopped" — online only, never a chat message. */
+    const val TYPE_TYPING: Byte = 0x0A
 
     const val DEFAULT_TTL = 5
 

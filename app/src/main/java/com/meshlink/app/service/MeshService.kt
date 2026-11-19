@@ -76,6 +76,7 @@ class MeshService : Service() {
             ChatRepository.onIncoming(from, id, body, transport.name, senderName, senderPhone)
         }
         mesh.onAckFor = { id -> ChatRepository.onDelivered(id) }
+        mesh.onTyping = { from, typing -> ChatRepository.setTyping(from, typing) }
         mesh.onFileForMe = { from, id, name, mime, path, size, transport, senderName ->
             ChatRepository.onIncomingFile(
                 from, id, name, mime, path, size, transport.name, senderName,

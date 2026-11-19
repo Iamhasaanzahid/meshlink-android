@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12.1 — 2026-11-18
+
+### Added
+- **Typing indicator.** When the other side writes, the chat header switches to
+  a mint "typing…" line for a few seconds. It travels as a one-byte control
+  frame over online mode only, so Bluetooth and Wi-Fi airtime is never wasted
+  on keystrokes.
+
 ## 1.12.0 — 2026-11-18
 
 ### Added

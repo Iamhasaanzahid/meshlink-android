@@ -47,6 +47,17 @@ object ChatRepository {
     private val _transferProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
     val transferProgress: StateFlow<Map<String, Int>> = _transferProgress.asStateFlow()
 
+    /** Peers currently typing, keyed by UIN with the time we last heard it. */
+    private val _typing = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val typing: StateFlow<Map<String, Long>> = _typing.asStateFlow()
+
+    fun setTyping(peer: String, typing: Boolean) {
+        val key = peer.trim().uppercase()
+        if (key.isEmpty()) return
+        _typing.value = if (typing) _typing.value + (key to System.currentTimeMillis())
+        else _typing.value - key
+    }
+
     /** Fired for every message that arrives while the app is in the background. */
     @Volatile
     var onNewMessage: ((Message, Chat) -> Unit)? = null
