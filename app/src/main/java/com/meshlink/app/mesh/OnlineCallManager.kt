@@ -133,6 +133,22 @@ object OnlineCallManager {
     private fun iceServers(): List<PeerConnection.IceServer> = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+        // Free public TURN relay (Open Relay / Metered). STUN alone fails on
+        // mobile data behind carrier-grade NAT; TURN makes the call connect
+        // anyway. Media stays DTLS-SRTP encrypted end to end — the relay only
+        // forwards sealed packets and cannot listen.
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
+            .setUsername("openrelayproject")
+            .setPassword("openrelayproject")
+            .createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
+            .setUsername("openrelayproject")
+            .setPassword("openrelayproject")
+            .createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
+            .setUsername("openrelayproject")
+            .setPassword("openrelayproject")
+            .createIceServer(),
     )
 
     private val observer = object : PeerConnection.Observer {

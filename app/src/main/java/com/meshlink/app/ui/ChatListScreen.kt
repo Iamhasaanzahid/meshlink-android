@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Divider
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,23 +42,20 @@ fun ChatListScreen(
     if (chats.isEmpty()) {
         EmptyState(
             title = "No chats yet",
-            body = "Tap the pencil to start a chat. Messages travel over " +
-                "Wi-Fi LAN, Wi-Fi Direct, Bluetooth or SMS — no internet required.",
+            body = "Tap New chat to start. Messages travel over Wi-Fi, " +
+                "Bluetooth or the internet relay — whichever is available.",
         )
         return
     }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface),
-        contentPadding = PaddingValues(vertical = 4.dp),
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         items(chats, key = { it.peer }) { chat ->
             ChatRow(chat) { onOpen(chat) }
-            Divider(
-                modifier = Modifier.padding(start = 78.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            )
         }
     }
 }
@@ -65,11 +65,12 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Avatar(chatTitle(chat), 52.dp)
+        Avatar(chatTitle(chat), 56.dp)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -84,7 +85,8 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
                 Text(
                     text = formatChatStamp(chat.lastTimestamp),
                     fontSize = 11.sp,
-                    color = if (chat.unread > 0) OnlineGreen
+                    fontWeight = if (chat.unread > 0) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (chat.unread > 0) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -102,9 +104,11 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
                     Spacer(Modifier.width(8.dp))
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(OnlineGreen),
+                            .height(20.dp)
+                            .widthIn(min = 20.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 6.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -129,6 +133,28 @@ fun EmptyState(title: String, body: String) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        Box(
+            modifier = Modifier
+                .size(84.dp)
+                .clip(CircleShape)
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.material3.Icon(
+                Icons.Filled.Chat,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(38.dp),
+            )
+        }
+        Spacer(Modifier.height(18.dp))
         Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(Modifier.height(8.dp))
         Text(

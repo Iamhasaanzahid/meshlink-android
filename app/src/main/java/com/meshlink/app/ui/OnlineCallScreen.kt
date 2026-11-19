@@ -133,7 +133,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Online call", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         Text(
-                            "Direct phone-to-phone over the internet · encrypted",
+                            "Encrypted call over the internet · TURN fallback for mobile data",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -250,7 +250,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Ringing over the internet · encrypted",
+                            "Ringing over the internet · encrypted end to end",
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                             fontSize = 12.sp,
@@ -444,7 +444,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "encrypted · direct peer-to-peer",
+                            "encrypted end to end · direct or via TURN",
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                             fontSize = 11.sp,

@@ -7,14 +7,24 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Person
@@ -24,7 +34,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +45,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -49,7 +62,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -90,9 +106,10 @@ fun HomeScreen(
     var addContactOpen by remember { mutableStateOf(false) }
     var contactName by remember { mutableStateOf("") }
     var contactAddress by remember { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
     var onlineCallOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var callPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
     var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
@@ -194,16 +211,48 @@ fun HomeScreen(
     // opens the phone's SIM dialer.
     fun startCall(peer: String, name: String) {
         val mesh = engine
-        if (mesh?.onlineIsConnected == true && peer.trim().uppercase().startsWith("OFF-")) {
+        val isUin = peer.trim().uppercase().startsWith("OFF-")
+        if (mesh?.onlineIsConnected == true && isUin) {
             OnlineCallManager.startRelayedCall(peer, name)
             onlineCallOpen = true
             return
         }
         if (mesh != null && CallManager.placeCall(peer, name)) return
+        if (isUin && !onlineEnabled) {
+            // Mobile data is the usual way to reach another country. Offer to
+            // switch the relay on instead of failing with a dead end.
+            callPrompt = peer to name
+            return
+        }
         Toast.makeText(
             context,
-            "No call path right now. Turn on Online mode (Settings) for an internet " +
-                "call, or put both phones on the same Wi-Fi / hotspot.",
+            if (isUin && onlineEnabled) {
+                "The relay is still connecting. Try the call again in a few seconds."
+            } else {
+                "No call path right now. Move closer for Wi-Fi, or save a UIN to call " +
+                    "over the internet."
+            },
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    // After the user switches online mode on from the call prompt, wait for the
+    // MQTT session and place the call automatically.
+    LaunchedEffect(pendingOnlineCall) {
+        val pending = pendingOnlineCall ?: return@LaunchedEffect
+        repeat(30) {
+            delay(500)
+            if (engine?.onlineIsConnected == true) {
+                OnlineCallManager.startRelayedCall(pending.first, pending.second)
+                onlineCallOpen = true
+                pendingOnlineCall = null
+                return@LaunchedEffect
+            }
+        }
+        pendingOnlineCall = null
+        Toast.makeText(
+            context,
+            "Could not reach the relay. Check mobile data / Wi-Fi and try again.",
             Toast.LENGTH_LONG,
         ).show()
     }
@@ -233,50 +282,140 @@ fun HomeScreen(
     } else {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("MeshLink", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            val presence = when {
-                                status["onlineConnected"] == true -> "online"
-                                (status["wifiLanPeers"] as? Int ?: 0) > 0 -> "nearby"
-                                status["wifiGroup"] == true -> "nearby"
-                                (status["blePeers"] as? Int ?: 0) > 0 -> "nearby"
-                                else -> "offline"
+                val presence = when {
+                    status["onlineConnected"] == true -> "Online"
+                    (status["wifiLanPeers"] as? Int ?: 0) > 0 -> "Nearby"
+                    status["wifiGroup"] == true -> "Nearby"
+                    (status["blePeers"] as? Int ?: 0) > 0 -> "Nearby"
+                    else -> "Offline"
+                }
+                val isOnline = status["onlineConnected"] == true
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(listOf(BrandViolet, BrandDeep)),
+                        ),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .statusBarsPadding()
+                            .padding(start = 20.dp, end = 14.dp, top = 10.dp, bottom = 16.dp),
+                    ) {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "MeshLink",
+                                    color = Color.White,
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.4.sp,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .background(
+                                                if (isOnline) BrandMint else Color(0xFFFFC46B),
+                                                CircleShape,
+                                            ),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "$myUin · $presence",
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
                             }
-                            Text("ID: $myUin · $presence", fontSize = 11.sp)
+                            Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline)
                         }
-                    },
-                    actions = {
                         if (tab == 0) {
-                            IconButton(onClick = { searching = !searching; query = "" }) {
-                                Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color.White)
+                            Spacer(Modifier.height(16.dp))
+                            Surface(
+                                color = Color.White.copy(alpha = 0.16f),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.9f),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    BasicTextField(
+                                        value = query,
+                                        onValueChange = { query = it },
+                                        singleLine = true,
+                                        textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                                        cursorBrush = SolidColor(Color.White),
+                                        modifier = Modifier.weight(1f),
+                                        decorationBox = { inner ->
+                                            if (query.isEmpty()) {
+                                                Text(
+                                                    "Search chats",
+                                                    color = Color.White.copy(alpha = 0.7f),
+                                                    fontSize = 14.sp,
+                                                )
+                                            }
+                                            inner()
+                                        },
+                                    )
+                                    if (query.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = { query = "" },
+                                            modifier = Modifier.size(26.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "Clear",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = Color.White,
-                    ),
-                )
+                    }
+                }
             },
             floatingActionButton = {
-                FloatingActionButton(
-                    onClick = {
-                        when (tab) {
-                            2 -> { contactName = ""; contactAddress = ""; addContactOpen = true }
-                            else -> newChatOpen = true
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "New")
+                if (tab != 3) {
+                    ExtendedFloatingActionButton(
+                        onClick = {
+                            when (tab) {
+                                2 -> { contactName = ""; contactAddress = ""; addContactOpen = true }
+                                else -> newChatOpen = true
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White,
+                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                        text = { Text(if (tab == 2) "New contact" else "New chat") },
+                    )
                 }
             },
             bottomBar = {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                ) {
                     NavigationBarItem(
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                         selected = tab == 0,
                         onClick = { tab = 0 },
                         icon = {
@@ -292,18 +431,39 @@ fun HomeScreen(
                         label = { Text("Chats") },
                     )
                     NavigationBarItem(
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                         selected = tab == 1,
                         onClick = { tab = 1 },
                         icon = { Icon(Icons.Filled.Call, contentDescription = "Calls") },
                         label = { Text("Calls") },
                     )
                     NavigationBarItem(
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                         selected = tab == 2,
                         onClick = { tab = 2 },
                         icon = { Icon(Icons.Filled.Person, contentDescription = "Contacts") },
                         label = { Text("Contacts") },
                     )
                     NavigationBarItem(
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                         selected = tab == 3,
                         onClick = { tab = 3 },
                         icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
@@ -315,18 +475,6 @@ fun HomeScreen(
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
                     0 -> Column {
-                        if (searching) {
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = { query = it },
-                                placeholder = { Text("Search chats") },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            )
-                        }
                         ChatListScreen(
                             chats = chats.filter {
                                 query.isBlank() ||
@@ -459,6 +607,33 @@ fun HomeScreen(
                 ) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { addContactOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (callPrompt != null) {
+        AlertDialog(
+            onDismissRequest = { callPrompt = null },
+            title = { Text("Call over the internet?") },
+            text = {
+                Text(
+                    "This contact is a MeshLink ID, not a nearby radio. The call goes " +
+                        "through the online relay over mobile data or any Wi-Fi — " +
+                        "anywhere in the world.\n\nTurn on Online mode and connect?",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val pending = callPrompt
+                    callPrompt = null
+                    onlineEnabled = true
+                    MeshSettings.setOnlineEnabled(context, true)
+                    engine?.setOnlineMode(true)
+                    pendingOnlineCall = pending
+                }) { Text("Turn on & call") }
+            },
+            dismissButton = {
+                TextButton(onClick = { callPrompt = null }) { Text("Cancel") }
+            },
         )
     }
 

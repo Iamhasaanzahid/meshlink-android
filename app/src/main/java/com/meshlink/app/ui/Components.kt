@@ -1,6 +1,7 @@
 package com.meshlink.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,11 +42,11 @@ import java.util.Locale
 
 // ------------------------------------------------------------------ palette
 
-val ChatBackground = Color(0xFFF3EDF7)
+val ChatBackground = Color(0xFFF1ECFA)
 val IncomingBubble = Color(0xFFFFFFFF)
-val OutgoingBubble = Color(0xFF6750A4)
-val TickBlue = Color(0xFF5BB8FF)
-val OnlineGreen = Color(0xFF25D366)
+val OutgoingBubble = BrandViolet
+val TickBlue = Color(0xFF9FE8FF)
+val OnlineGreen = Color(0xFF00C88A)
 
 private val AvatarColors = listOf(
     Color(0xFF6750A4), Color(0xFF7D5260), Color(0xFF1B6C7A),
@@ -68,20 +69,47 @@ fun initials(name: String): String {
 // ------------------------------------------------------------------- avatar
 
 @Composable
-fun Avatar(name: String, size: Dp = 48.dp) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(avatarColor(name)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = initials(name),
-            color = Color.White,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = (size.value * 0.36f).sp,
-        )
+fun Avatar(name: String, size: Dp = 48.dp, showOnline: Boolean = false) {
+    val base = avatarColor(name)
+    val deep = Color(
+        red = base.red * 0.72f,
+        green = base.green * 0.72f,
+        blue = base.blue * 0.82f,
+        alpha = 1f,
+    )
+    Box(modifier = Modifier.size(size)) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(base, deep),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = initials(name),
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size.value * 0.36f).sp,
+            )
+        }
+        if (showOnline) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(size * 0.28f)
+                    .clip(CircleShape)
+                    .background(OnlineGreen)
+                    .border(
+                        width = 2.5.dp,
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = CircleShape,
+                    ),
+            )
+        }
     }
 }
 

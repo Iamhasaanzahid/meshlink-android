@@ -142,6 +142,7 @@ class OnlineTransport(private val context: Context) {
     // ------------------------------------------------------------- connection
 
     private fun connectLoop() {
+        var failedAttempts = 0
         while (!stopped) {
             val me = uin
             var c: MqttClient? = null
@@ -183,6 +184,7 @@ class OnlineTransport(private val context: Context) {
                 if (stopped) break
                 client = c
                 isConnected = true
+                failedAttempts = 0
                 resubscribe(c)
                 Log.i(TAG, "online mode ready on $brokerUrl as $me")
                 // Stay here until the socket drops or the user switches off.
@@ -196,7 +198,14 @@ class OnlineTransport(private val context: Context) {
                 runCatching { c?.disconnectForcibly(0, 0, false) }
                 runCatching { c?.close() }
             }
-            if (!stopped) Thread.sleep(3_000)
+            if (!stopped) {
+                failedAttempts++
+                // 2 s, 4 s, 8 s, 15 s (max) plus jitter. Hammering a public
+                // broker with a reconnect every 3 s gets the client throttled.
+                val step = (failedAttempts - 1).coerceIn(0, 3)
+                val wait = (2_000L shl step).coerceAtMost(15_000L)
+                Thread.sleep(wait + (Math.random() * 600).toLong())
+            }
         }
     }
 

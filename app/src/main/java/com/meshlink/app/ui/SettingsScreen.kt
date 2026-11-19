@@ -102,7 +102,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        "Offline identity · no account, no internet",
+                        "Your ID lives on this phone · no account",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                     )
@@ -111,7 +111,7 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(18.dp))
-        SectionTitle("Online mode (www)")
+        SectionTitle("Online mode")
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),

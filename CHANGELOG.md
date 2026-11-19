@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.12.0 — 2026-11-18
+
+### Added
+- **Long-press any message** for three actions, WhatsApp style:
+  - **Reply** — the quoted snippet appears above the composer and is sent
+    with your text (works over every transport, no protocol change).
+  - **Forward** — pick any other chat from a list; text, photos, documents and
+    voice notes all forward without re-downloading.
+  - **Delete for me** — removes the message from this device only (there is no
+    server to delete from).
+- **Fresh visual design.** New violet/indigo gradient header, brand avatars
+  with online dots, rounded nav bar, pill unread counters, redesigned empty
+  states and a cleaner conversation header.
+
+### Fixed
+- **Calls on mobile data.** Added public TURN relays next to STUN, so real
+  calls connect behind carrier-grade NAT instead of failing when both phones
+  are on 4G/5G. Media is still DTLS-SRTP end-to-end; TURN only forwards
+  sealed packets.
+- **Relay reliability.** Reconnects now back off 2→15 s with jitter instead of
+  hammering the public broker every 3 s (which caused throttling), and the
+  backoff resets after a good connection.
+
 ## 1.11.1 — 2026-11-18
 
 ### Added

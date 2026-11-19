@@ -226,6 +226,20 @@ object ChatRepository {
     }
 
     /** Re-queue a failed message. */
+    /** Delete one message from this device only (there is no central server). */
+    fun deleteMessage(id: String) {
+        scope.launch {
+            val chatId = db.readableDatabase.rawQuery(
+                "SELECT chat_id FROM messages WHERE id = ?", arrayOf(id),
+            )?.use { if (it.moveToFirst()) it.getString(0) else null }
+            db.writableDatabase.delete("messages", "id = ?", arrayOf(id))
+            if (chatId != null) {
+                refreshMessages(chatId)
+                refreshChats()
+            }
+        }
+    }
+
     fun retry(message: Message) {
         scope.launch {
             updateStatus(message.id, MsgStatus.SENDING)
