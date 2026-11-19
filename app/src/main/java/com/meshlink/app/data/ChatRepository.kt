@@ -69,6 +69,7 @@ object ChatRepository {
         synchronized(this) {
             if (initialised) return
             db = MeshDatabase(context.applicationContext)
+            GroupStore.init(context)
             appContext = context.applicationContext
             initialised = true
         }
@@ -166,6 +167,7 @@ object ChatRepository {
         val target = peer.trim()
         val text = body.trim()
         if (target.isEmpty() || text.isEmpty()) return null
+        if (GroupStore.isGroup(target)) return sendGroupText(target, text, name)
 
         val msg = Message(
             id = UUID.randomUUID().toString(),
@@ -204,6 +206,16 @@ object ChatRepository {
     ): Message? {
         val target = peer.trim()
         if (target.isEmpty() || !file.exists() || file.length() > MAX_MEDIA_BYTES) return null
+        if (GroupStore.isGroup(target)) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(
+                    appContext,
+                    "Group files are coming soon. Text works in groups now.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+            return null
+        }
 
         val preview = previewFor(kind, displayName)
         val msg = Message(
@@ -226,6 +238,53 @@ object ChatRepository {
             refreshMessages(target)
             refreshChats()
             dispatchMedia(msg)
+        }
+        return msg
+    }
+
+    /** Create a group and invite each member over the online relay / mesh. */
+    fun createGroup(name: String, membersCsv: String): String {
+        val title = name.trim().take(40).ifBlank { "New group" }
+        val members = membersCsv.split(',', ';', ' ', '\n')
+            .map { it.trim().uppercase() }.filter { it.startsWith("OFF-") }.distinct()
+        val id = "GRP-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase()
+        GroupStore.save(id, title, members)
+        val ts = System.currentTimeMillis()
+        scope.launch {
+            touchChat(id, title, "Group created · ${members.size} member(s)", ts, "AUTO", 0)
+            refreshChats()
+        }
+        val invite = "MLGINV|$id|$title|${members.joinToString(",")}"
+        val displayName = appContext?.let { SessionStore.displayName(it) }.orEmpty()
+        val engine = MeshService.engine
+        members.forEach { member ->
+            engine?.sendMessage(member, UUID.randomUUID().toString(), invite, displayName, false)
+        }
+        return id
+    }
+
+    private fun sendGroupText(groupId: String, text: String, name: String): Message? {
+        val group = GroupStore.get(groupId) ?: return null
+        val msg = Message(UUID.randomUUID().toString(), groupId, true, text,
+            System.currentTimeMillis(), "AUTO", MsgStatus.SENDING)
+        scope.launch {
+            insertMessage(msg)
+            touchChat(groupId, group.name, text, msg.timestamp, "AUTO", 0)
+            refreshMessages(groupId)
+            refreshChats()
+            val sender = appContext?.let { SessionStore.displayName(it) }
+                ?.takeIf { it.isNotBlank() } ?: groupId
+            val wire = "MLG1|$groupId|${group.name}|$sender|$text"
+            var delivered = false
+            group.members.forEach { member ->
+                val ok = MeshService.engine?.sendMessage(
+                    member, UUID.randomUUID().toString(), wire, sender, false,
+                ) ?: false
+                if (ok) delivered = true
+            }
+            updateStatus(msg.id, if (delivered) MsgStatus.SENT else MsgStatus.FAILED)
+            refreshMessages(groupId)
+            refreshChats()
         }
         return msg
     }
@@ -420,6 +479,36 @@ object ChatRepository {
         val peer = from.trim()
         if (peer.isEmpty() || body.isEmpty()) return
 
+        if (body.startsWith("MLGINV|")) {
+            val parts = body.split("|", limit = 4)
+            if (parts.size >= 3 && GroupStore.isGroup(parts[1])) {
+                val gid = parts[1].uppercase()
+                val gname = parts[2].take(40)
+                val invited = HashSet(parts.getOrNull(3).orEmpty()
+                    .split(',').map { it.trim().uppercase() }.filter { it.isNotBlank() })
+                invited.add(peer)
+                GroupStore.ensure(gid, gname, invited)
+                val now = System.currentTimeMillis()
+                scope.launch {
+                    touchChat(gid, gname, "Group invite · ${invited.size} members", now, transport, 0)
+                    refreshChats()
+                }
+            }
+            return
+        }
+
+        var chatId = peer
+        var visibleBody = body
+        if (body.startsWith("MLG1|")) {
+            val parts = body.split("|", limit = 5)
+            if (parts.size < 5 || !GroupStore.isGroup(parts[1])) return
+            chatId = parts[1].uppercase()
+            val gname = parts[2].take(40)
+            GroupStore.ensure(chatId, gname, setOf(peer))
+            val author = parts[3].take(40).ifBlank { peer }
+            visibleBody = "$author: ${parts[4]}"
+        }
+
         // Ignore duplicates: the same message can arrive over the mesh and
         // over an internet bridge at the same time.
         if (!claimIncoming(messageId)) return
@@ -427,22 +516,23 @@ object ChatRepository {
 
         val msg = Message(
             id = messageId,
-            chatId = peer,
+            chatId = chatId,
             fromMe = false,
-            body = body,
+            body = visibleBody,
             timestamp = System.currentTimeMillis(),
             transport = transport,
             status = MsgStatus.RECEIVED,
         )
         scope.launch {
             insertMessage(msg)
-            touchChat(peer, resolveName(peer, senderName), body, msg.timestamp, transport, 1)
+            touchChat(chatId, GroupStore.get(chatId)?.name
+                ?: resolveName(peer, senderName), visibleBody, msg.timestamp, transport, 1)
             if (senderPhone.isNotBlank() && senderPhone != peer) {
                 savePhoneAlias(peer, senderPhone)
             }
-            refreshMessages(peer)
+            refreshMessages(chatId)
             refreshChats()
-            val chat = _chats.value.firstOrNull { it.peer == peer }
+            val chat = _chats.value.firstOrNull { it.peer == chatId }
             if (chat != null) onNewMessage?.invoke(msg, chat)
         }
     }

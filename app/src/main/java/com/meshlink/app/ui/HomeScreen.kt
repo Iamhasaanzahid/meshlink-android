@@ -109,6 +109,9 @@ fun HomeScreen(
     var onlineCallOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var callPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var groupDialog by remember { mutableStateOf(false) }
+    var groupName by remember { mutableStateOf("") }
+    var groupMembers by remember { mutableStateOf("") }
     var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingVideoCall by remember { mutableStateOf<Pair<String, String>?>(null) }
     var videoCallWanted by remember { mutableStateOf(false) }
@@ -330,6 +333,47 @@ fun HomeScreen(
         return
     }
 
+    if (groupDialog) {
+        AlertDialog(
+            onDismissRequest = { groupDialog = false },
+            title = { Text("New group") },
+            text = {
+                Column {
+                    OutlinedTextField(value = groupName, onValueChange = { groupName = it },
+                        label = { Text("Group name") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = groupMembers, onValueChange = { groupMembers = it },
+                        label = { Text("Members (MeshLink IDs)") },
+                        placeholder = { Text("OFF-XXXXXX, OFF-YYYYYY") },
+                        modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(6.dp))
+                    Text("Everyone needs Online mode for a group to cross countries.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val title = groupName.trim()
+                    if (title.isEmpty() || !groupMembers.contains("OFF-")) {
+                        Toast.makeText(context,
+                            "Add a name and at least one OFF-… member ID.",
+                            Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    val gid = ChatRepository.createGroup(title, groupMembers)
+                    openPeer = gid
+                    openName = title
+                    groupDialog = false
+                    groupName = ""
+                    groupMembers = ""
+                }) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { groupDialog = false }) { Text("Cancel") } },
+        )
+    }
+
     if (openChat != null) {
         ConversationScreen(
             chat = openChat,
@@ -388,7 +432,13 @@ fun HomeScreen(
                                     )
                                 }
                             }
-                            Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline)
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                IconButton(onClick = { groupDialog = true }, enabled = tab == 0) {
+                                    Icon(Icons.Filled.GroupAdd, contentDescription = "New group",
+                                        tint = if (tab == 0) Color.White else Color.White.copy(alpha = 0.4f))
+                                }
+                                Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline)
+                            }
                         }
                         if (tab == 0) {
                             Spacer(Modifier.height(16.dp))

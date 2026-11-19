@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0 — 2026-11-18
+
+### Added
+- **Groups.** Create a group from the chat header, add members by MeshLink ID,
+  and every message is relayed encrypted to each member — across countries
+  when everyone has Online mode on. A distinct group chat keeps the history.
+- Invites travel over the same online/mesh path; no group server or account.
+- Group messages use the existing segmentation and dedupe, so long texts and
+  flaky links behave like normal chats. Media in groups is not wired up yet.
+
 ## 1.14.0 — 2026-11-18
 
 ### Added
