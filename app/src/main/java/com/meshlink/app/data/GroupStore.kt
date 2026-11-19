@@ -60,6 +60,24 @@ object GroupStore {
         }
     }
 
+    fun remove(id: String) {
+        val p = prefs ?: return
+        synchronized(lock) {
+            val map = HashMap(all())
+            map.remove(id)
+            val root = JSONObject()
+            map.values.forEach { g ->
+                val o = JSONObject().put("name", g.name)
+                val arr = JSONArray()
+                g.members.sorted().forEach { arr.put(it) }
+                o.put("members", arr)
+                root.put(g.id, o)
+            }
+            p.edit().putString(KEY, root.toString()).apply()
+            cache = map
+        }
+    }
+
     fun ensure(id: String, name: String, newMembers: Set<String>) {
         val existing = get(id)
         val merged = HashSet(existing?.members ?: emptySet()).apply { addAll(newMembers) }

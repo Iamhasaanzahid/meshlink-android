@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.21.0 — 2026-11-19
+
+### Added
+- **Group info.** Open a group chat menu to see every member, add someone by
+  MeshLink ID (they get an invite instantly) or leave the group and clear its
+  local history.
+
 ## 1.20.0 — 2026-11-19
 
 ### Added

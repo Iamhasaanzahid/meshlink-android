@@ -99,6 +99,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.meshlink.app.data.Chat
 import com.meshlink.app.data.ChatRepository
+import com.meshlink.app.data.GroupStore
 import com.meshlink.app.data.Message
 import com.meshlink.app.data.MsgKind
 import com.meshlink.app.data.MsgStatus
@@ -147,6 +148,8 @@ fun ConversationScreen(
     var searchQuery by remember { mutableStateOf("") }
     var searchHitIndex by remember { mutableIntStateOf(0) }
     var highlightId by remember { mutableStateOf<String?>(null) }
+    var groupInfoOpen by remember { mutableStateOf(false) }
+    var newMember by remember { mutableStateOf("") }
 
     LaunchedEffect(chat.peer) { ChatRepository.markRead(chat.peer) }
     LaunchedEffect(messages.size, chat.peer) { ChatRepository.markRead(chat.peer) }
@@ -405,6 +408,12 @@ fun ConversationScreen(
                                     onVideoCall(chat.peer, chatTitle(chat))
                                 },
                             )
+                            if (GroupStore.isGroup(chat.peer)) {
+                                DropdownMenuItem(
+                                    text = { Text("Group info") },
+                                    onClick = { menuOpen = false; groupInfoOpen = true },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Save contact") },
                                 onClick = { menuOpen = false; contactName = chatTitle(chat); addContactOpen = true },
@@ -687,6 +696,49 @@ fun ConversationScreen(
                 }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { addContactOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (groupInfoOpen) {
+        val group = GroupStore.get(chat.peer)
+        AlertDialog(
+            onDismissRequest = { groupInfoOpen = false },
+            title = { Text(group?.name ?: "Group") },
+            text = {
+                Column {
+                    Text(
+                        "${group?.members?.size ?: 0} members · ${chat.peer}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    group?.members?.sorted()?.forEach { member ->
+                        Text(member, fontSize = 13.sp, modifier = Modifier.padding(vertical = 2.dp))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = newMember,
+                        onValueChange = { newMember = it },
+                        label = { Text("Add member (OFF-…)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextButton(onClick = {
+                        ChatRepository.addGroupMember(chat.peer, newMember)
+                        newMember = ""
+                    }) { Text("Add member") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { groupInfoOpen = false }) { Text("Done") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    ChatRepository.leaveGroup(chat.peer)
+                    groupInfoOpen = false
+                    onBack()
+                }) { Text("Leave group", color = MaterialTheme.colorScheme.error) }
+            },
         )
     }
 

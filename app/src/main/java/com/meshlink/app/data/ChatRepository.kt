@@ -255,6 +255,34 @@ object ChatRepository {
         return msg
     }
 
+    /** Add one member to an existing group and invite them right away. */
+    fun addGroupMember(groupId: String, member: String) {
+        val g = GroupStore.get(groupId) ?: return
+        val uin = member.trim().uppercase()
+        if (!uin.startsWith("OFF-") || g.members.contains(uin)) return
+        GroupStore.save(groupId, g.name, g.members + uin)
+        val sender = appContext?.let { SessionStore.displayName(it) }.orEmpty()
+        val invite = "MLGINV|$groupId|${g.name}|${(g.members + uin).joinToString(",")}"
+        scope.launch {
+            MeshService.engine?.sendMessage(
+                uin, UUID.randomUUID().toString(), invite, sender, false,
+            )
+            touchChat(groupId, g.name, "Added $uin", System.currentTimeMillis(), "AUTO", 0)
+            refreshChats()
+        }
+    }
+
+    /** Leave a group on this phone; history and membership are removed locally. */
+    fun leaveGroup(groupId: String) {
+        GroupStore.remove(groupId)
+        scope.launch {
+            db.writableDatabase.execSQL("DELETE FROM messages WHERE chat_id = ?", arrayOf(groupId))
+            db.writableDatabase.execSQL("DELETE FROM chats WHERE peer = ?", arrayOf(groupId))
+            refreshMessages(groupId)
+            refreshChats()
+        }
+    }
+
     /** Send an emoji reaction over the same path as the original chat. */
     fun sendReaction(message: Message, emoji: String) {
         val targetChat = message.chatId
