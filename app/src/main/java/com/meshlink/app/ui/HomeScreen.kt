@@ -434,7 +434,7 @@ fun HomeScreen(
                             }
                             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 IconButton(onClick = { groupDialog = true }, enabled = tab == 0) {
-                                    Icon(Icons.Filled.People, contentDescription = "New group",
+                                    Icon(Icons.Filled.Add, contentDescription = "New group",
                                         tint = if (tab == 0) Color.White else Color.White.copy(alpha = 0.4f))
                                 }
                                 Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline)
