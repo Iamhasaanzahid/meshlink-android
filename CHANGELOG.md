@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.25.0 — 2026-11-19 — QR web linking
+
+### Added
+- **Link web (WhatsApp-style QR).** Settings → Devices → Scan QR to link web.
+  The web app shows a one-time QR that rotates every 30 seconds; scanning it
+  with MeshLink approves the session and signs the browser in as this phone.
+  Only the phone's MeshLink ID and display name are sent — no phone number.
+
 ## 1.24.0 — 2026-11-19 — hybrid transport hardening
 
 ### Fixed

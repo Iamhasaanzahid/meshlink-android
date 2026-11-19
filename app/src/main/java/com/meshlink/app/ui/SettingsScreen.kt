@@ -32,11 +32,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.runtime.rememberCoroutineScope
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.meshlink.app.data.MeshSettings
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import com.meshlink.app.BuildConfig
 
@@ -71,6 +78,21 @@ fun SettingsScreen(
 ) {
     var phoneDraft by remember(myPhone) { mutableStateOf(myPhone) }
     var brokerDraft by remember(onlineBroker) { mutableStateOf(onlineBroker) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val qrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val request = QrLink.parse(result.contents.orEmpty())
+        if (request == null) {
+            Toast.makeText(context, "Not a MeshLink pairing QR", Toast.LENGTH_SHORT).show()
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val outcome = QrLink.approve(request, myUin, displayName)
+            val message = outcome.getOrNull()?.let { "Web linked · return to your browser" }
+                ?: "Link failed: ${outcome.exceptionOrNull()?.message ?: "unknown error"}"
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -504,6 +526,35 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("If nothing appears, open Android settings") }
                 }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        SectionTitle("Devices")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("Link web", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Scan the QR shown on meshlink web to sign in with this MeshLink ID. The code expires every 30 seconds.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        val options = ScanOptions()
+                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            .setPrompt("Scan the MeshLink web QR code")
+                            .setBeepEnabled(false)
+                        qrScanner.launch(options)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Scan QR to link web") }
             }
         }
 
