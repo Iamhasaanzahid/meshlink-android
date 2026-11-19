@@ -255,6 +255,28 @@ fun HomeScreen(
         }
     }
 
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val json = withContext(Dispatchers.IO) { ChatRepository.exportJson() }
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(json.toByteArray(Charsets.UTF_8))
+                        } != null
+                    }.getOrDefault(false)
+                }
+                Toast.makeText(
+                    context,
+                    if (ok) "Backup exported" else "Could not write the backup file",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -708,6 +730,7 @@ fun HomeScreen(
                             engine?.refreshWifiPeers()
                             wifiPeers = engine?.wifiPeers() ?: emptyList()
                         },
+                        onExportChats = { exportLauncher.launch("meshlink-backup.json") },
                         onLogout = onLogout,
                     )
                 }

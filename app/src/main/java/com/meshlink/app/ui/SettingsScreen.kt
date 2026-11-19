@@ -66,6 +66,7 @@ fun SettingsScreen(
     onToggleSmsFallback: (Boolean) -> Unit,
     onConnectPeer: (WifiP2pDevice) -> Unit,
     onRefreshPeers: () -> Unit,
+    onExportChats: () -> Unit = {},
     onLogout: () -> Unit,
 ) {
     var phoneDraft by remember(myPhone) { mutableStateOf(myPhone) }
@@ -490,6 +491,26 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(20.dp))
+        SectionTitle("Backup")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("Export chats", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Save chats, messages and contacts as one JSON file you choose. Nothing is uploaded.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onExportChats) { Text("Export backup file") }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
         SectionTitle("About")
         Text(
             "MeshLink ${BuildConfig.VERSION_NAME} · free software (GPL-3.0-or-later)\n" +

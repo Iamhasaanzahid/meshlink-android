@@ -863,6 +863,64 @@ object ChatRepository {
         )
     }
 
+    /** Full local history as JSON, for the user's own backup file. */
+    fun exportJson(): String {
+        val root = org.json.JSONObject()
+        val chatsArr = org.json.JSONArray()
+        db.readableDatabase.rawQuery(
+            "SELECT peer, name, last_message, last_ts, unread, last_transport FROM chats ORDER BY last_ts DESC",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                chatsArr.put(
+                    org.json.JSONObject()
+                        .put("peer", c.getString(0))
+                        .put("name", c.getString(1))
+                        .put("lastMessage", c.getString(2))
+                        .put("lastTimestamp", c.getLong(3))
+                        .put("unread", c.getInt(4))
+                        .put("lastTransport", c.getString(5)),
+                )
+            }
+        }
+        val msgArr = org.json.JSONArray()
+        db.readableDatabase.rawQuery(
+            "SELECT id, chat_id, from_me, body, ts, transport, status, kind, media_name, media_size, reaction " +
+                "FROM messages ORDER BY ts ASC",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                msgArr.put(
+                    org.json.JSONObject()
+                        .put("id", c.getString(0))
+                        .put("chatId", c.getString(1))
+                        .put("fromMe", c.getInt(2) == 1)
+                        .put("body", c.getString(3))
+                        .put("timestamp", c.getLong(4))
+                        .put("transport", c.getString(5))
+                        .put("status", c.getString(6))
+                        .put("kind", c.getString(7))
+                        .put("mediaName", c.getString(8))
+                        .put("mediaSize", c.getLong(9))
+                        .put("reaction", c.getString(10)),
+                )
+            }
+        }
+        val contactsArr = org.json.JSONArray()
+        db.readableDatabase.rawQuery("SELECT name, address FROM contacts ORDER BY name", null).use { c ->
+            while (c.moveToNext()) {
+                contactsArr.put(org.json.JSONObject().put("name", c.getString(0)).put("address", c.getString(1)))
+            }
+        }
+        root.put("app", "MeshLink")
+        root.put("exportedAt", System.currentTimeMillis())
+        root.put("uin", appContext?.let { SessionStore.uin(it) } ?: "")
+        root.put("chats", chatsArr)
+        root.put("messages", msgArr)
+        root.put("contacts", contactsArr)
+        return root.toString(2)
+    }
+
     // ----------------------------------------------------------------- calls
 
     fun logCall(

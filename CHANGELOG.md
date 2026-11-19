@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.23.0 — 2026-11-19
+
+### Added
+- **Backup export.** Settings → Backup → Export backup file saves chats,
+  messages (with reactions and media names) and contacts as one readable JSON
+  document you choose. Nothing leaves the phone unless you share that file.
+
 ## 1.22.0 — 2026-11-19
 
 ### Added
