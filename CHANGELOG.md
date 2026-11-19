@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.16.0 — 2026-11-18
+
+### Added
+- **Profile photo.** Tap your avatar in Settings (or the chat header) to pick
+  a photo from the gallery. It is cropped into the avatar and kept in
+  app-private storage; no upload or account is involved.
+- Remove photo with one tap. Until contact photo sync ships, this picture is
+  local to your phone only.
+
 ## 1.15.0 — 2026-11-18
 
 ### Added

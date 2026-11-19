@@ -57,10 +57,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -113,6 +117,7 @@ fun HomeScreen(
     var groupName by remember { mutableStateOf("") }
     var groupMembers by remember { mutableStateOf("") }
     var avatarPath by remember { mutableStateOf(SessionStore.avatarPath(context)) }
+    val scope = rememberCoroutineScope()
     var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingVideoCall by remember { mutableStateOf<Pair<String, String>?>(null) }
     var videoCallWanted by remember { mutableStateOf(false) }
