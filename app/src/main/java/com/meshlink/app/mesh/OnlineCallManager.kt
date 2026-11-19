@@ -20,6 +20,16 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
+import org.webrtc.Camera2Enumerator
+import org.webrtc.CameraVideoCapturer
+import org.webrtc.DefaultVideoDecoderFactory
+import org.webrtc.DefaultVideoEncoderFactory
+import org.webrtc.EglBase
+import org.webrtc.SurfaceTextureHelper
+import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoCapturer
+import org.webrtc.VideoSource
+import org.webrtc.VideoTrack
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
@@ -85,6 +95,10 @@ object OnlineCallManager {
         val relayed: Boolean = false,
         val peer: String = "",
         val callId: String = "",
+        /** Video call: remote + local camera are shown. */
+        val video: Boolean = false,
+        val cameraOn: Boolean = true,
+        val frontCamera: Boolean = true,
     )
 
     private val _state = MutableStateFlow(Ui())
@@ -98,6 +112,15 @@ object OnlineCallManager {
     private var peerConnection: PeerConnection? = null
     private var audioSource: AudioSource? = null
     private var audioTrack: AudioTrack? = null
+    private var eglBase: EglBase? = null
+    private var videoCapturer: CameraVideoCapturer? = null
+    private var videoSource: VideoSource? = null
+    private var videoTrack: VideoTrack? = null
+    private var remoteVideoTrack: VideoTrack? = null
+    private var localRenderer: SurfaceViewRenderer? = null
+    private var remoteRenderer: SurfaceViewRenderer? = null
+    private var videoActive: Boolean = false
+    private var frontCamera: Boolean = true
     private var timerJob: Job? = null
     private var exportRunnable: Runnable? = null
     private var ringTimeout: Runnable? = null
@@ -125,7 +148,14 @@ object OnlineCallManager {
                 .setEnableInternalTracer(false)
                 .createInitializationOptions()
         )
-        val created = PeerConnectionFactory.builder().createPeerConnectionFactory()
+        val egl = EglBase.create()
+        eglBase = egl
+        val created = PeerConnectionFactory.builder()
+            .setVideoEncoderFactory(
+                DefaultVideoEncoderFactory(egl.eglBaseContext, true, true),
+            )
+            .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
+            .createPeerConnectionFactory()
         factory = created
         return created
     }
@@ -190,10 +220,17 @@ object OnlineCallManager {
         override fun onRemoveStream(stream: MediaStream?) = Unit
         override fun onDataChannel(channel: DataChannel?) = Unit
         override fun onRenegotiationNeeded() = Unit
-        override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) = Unit
+        override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+            val track = receiver?.track()
+            if (track is VideoTrack) {
+                remoteVideoTrack = track
+                remoteRenderer?.let { runCatching { track.addSink(it) } }
+                Log.i(TAG, "remote video track attached")
+            }
+        }
     }
 
-    private fun newPeerConnection(): PeerConnection {
+    private fun newPeerConnection(video: Boolean = false): PeerConnection {
         val f = ensureFactory()
         val config = PeerConnection.RTCConfiguration(iceServers()).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -217,7 +254,73 @@ object OnlineCallManager {
         pc.addTrack(track, listOf("meshlink_stream"))
         audioSource = source
         audioTrack = track
+
+        videoActive = false
+        if (video) {
+            val vTrack = ensureVideoTrack(f)
+            if (vTrack != null) {
+                pc.addTrack(vTrack, listOf("meshlink_stream"))
+                videoActive = true
+            } else {
+                Log.w(TAG, "camera unavailable, continuing as an audio call")
+            }
+        }
         return pc
+    }
+
+    // ---------------------------------------------------------------- video
+
+    /** EGL context for the two SurfaceViewRenderer views in the call UI. */
+    fun eglContext(): EglBase.Context? = eglBase?.eglBaseContext
+
+    fun bindRenderers(local: SurfaceViewRenderer, remote: SurfaceViewRenderer) {
+        localRenderer = local
+        remoteRenderer = remote
+        runCatching { videoTrack?.addSink(local) }
+        runCatching { remoteVideoTrack?.addSink(remote) }
+    }
+
+    fun unbindRenderers() {
+        runCatching { videoTrack?.removeSink(localRenderer) }
+        runCatching { remoteVideoTrack?.removeSink(remoteRenderer) }
+        localRenderer = null
+        remoteRenderer = null
+    }
+
+    fun setCameraEnabled(enabled: Boolean) {
+        runCatching { videoTrack?.setEnabled(enabled) }
+        _state.value = _state.value.copy(cameraOn = enabled)
+    }
+
+    fun switchCamera() {
+        val capturer = videoCapturer ?: return
+        runCatching { capturer.switchCamera(null) }
+        frontCamera = !frontCamera
+        _state.value = _state.value.copy(frontCamera = frontCamera)
+    }
+
+    private fun ensureVideoTrack(f: PeerConnectionFactory): VideoTrack? {
+        videoTrack?.let { return it }
+        val egl = eglBase ?: return null
+        val ctx = context()
+        val enumerator = runCatching { Camera2Enumerator(ctx) }.getOrNull() ?: return null
+        val names = runCatching { enumerator.deviceNames }.getOrDefault(emptyArray())
+        if (names.isEmpty()) return null
+        val pick = names.firstOrNull { runCatching { enumerator.isFrontFacing(it) }.getOrDefault(false) }
+            ?: names.first()
+        val capturer = runCatching { enumerator.createCapturer(pick, null) }.getOrNull() ?: return null
+        val helper = SurfaceTextureHelper.create("MeshLinkCapture", egl.eglBaseContext)
+        val source = f.createVideoSource(capturer.isScreencast)
+        capturer.initialize(helper, ctx, source.capturerObserver)
+        runCatching { capturer.startCapture(640, 480, 24) }
+        val track = f.createVideoTrack("meshlink_video", source)
+        track.setEnabled(true)
+        localRenderer?.let { runCatching { track.addSink(it) } }
+        videoCapturer = capturer
+        videoSource = source
+        videoTrack = track
+        frontCamera = true
+        return track
     }
 
     // --------------------------------------------------------------- caller
@@ -327,7 +430,7 @@ object OnlineCallManager {
      * online mode (MQTT), the other phone rings itself, and WebRTC media
      * connects directly with DTLS-SRTP.
      */
-    fun startRelayedCall(peer: String, name: String) {
+    fun startRelayedCall(peer: String, name: String, video: Boolean = false) {
         val target = peer.trim()
         if (target.isBlank()) return
         reset(keepAudio = false)
@@ -339,11 +442,12 @@ object OnlineCallManager {
             relayed = true,
             peer = target,
             callId = id,
+            video = video,
         )
         enterAudioMode()
         armRingTimeout(id)
         try {
-            val pc = newPeerConnection()
+            val pc = newPeerConnection(video)
             pc.createOffer(object : SdpObserver {
                 override fun onCreateSuccess(desc: SessionDescription?) {
                     if (desc == null) {
@@ -390,7 +494,7 @@ object OnlineCallManager {
         enterAudioMode()
         armRingTimeout(s.callId)
         try {
-            val pc = newPeerConnection()
+            val pc = newPeerConnection(s.video)
             pc.setRemoteDescription(object : SdpObserver {
                 override fun onSetSuccess() {
                     pc.createAnswer(object : SdpObserver {
@@ -468,6 +572,7 @@ object OnlineCallManager {
                         relayed = true,
                         peer = from,
                         callId = id,
+                        video = json.optBoolean("video", false),
                     )
                     armRingTimeout(id)
                 }
@@ -528,6 +633,7 @@ object OnlineCallManager {
                 .put("id", id)
                 .put("sdp", desc.description)
                 .put("n", appContext?.let { SessionStore.displayName(it) } ?: "")
+                .put("video", videoActive)
                 .toString()
         }.getOrDefault("")
 
@@ -668,6 +774,16 @@ object OnlineCallManager {
         audioTrack = null
         runCatching { audioSource?.dispose() }
         audioSource = null
+        runCatching { videoCapturer?.stopCapture() }
+        runCatching { videoCapturer?.dispose() }
+        videoCapturer = null
+        runCatching { videoTrack?.dispose() }
+        videoTrack = null
+        runCatching { videoSource?.dispose() }
+        videoSource = null
+        remoteVideoTrack = null
+        videoActive = false
+        frontCamera = true
         if (!keepAudio) leaveAudioMode()
         if (!keepAudio) _state.value = Ui()
     }

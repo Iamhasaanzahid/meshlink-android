@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.14.0 — 2026-11-18
+
+### Added
+- **Video calls.** Chat menu → Video call starts an encrypted WebRTC video call
+  over the internet: full-screen remote video, mirrored self-preview, mute,
+  camera on/off, front/back flip and end. Audio-only calls stay one tap away.
+- Camera permission is requested only when you start or accept a video call;
+  without it the call continues as voice.
+
 ## 1.13.0 — 2026-11-18
 
 ### Added

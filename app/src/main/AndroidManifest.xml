@@ -9,9 +9,11 @@
 
     <!-- Calling: SIM dial + Wi-Fi Direct voice -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Bluetooth LE radio -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />

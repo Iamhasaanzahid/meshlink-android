@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -114,6 +115,7 @@ fun ConversationScreen(
     chat: Chat,
     onBack: () -> Unit,
     onCall: (peer: String, name: String) -> Unit,
+    onVideoCall: (peer: String, name: String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -386,6 +388,14 @@ fun ConversationScreen(
                             Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Video call") },
+                                leadingIcon = { Icon(Icons.Filled.Videocam, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onVideoCall(chat.peer, chatTitle(chat))
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Save contact") },
                                 onClick = { menuOpen = false; contactName = chatTitle(chat); addContactOpen = true },

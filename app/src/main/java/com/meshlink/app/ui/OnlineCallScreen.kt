@@ -21,11 +21,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Lock
@@ -33,6 +35,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -53,9 +57,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,6 +75,7 @@ import androidx.core.content.ContextCompat
 import com.meshlink.app.mesh.OnlineCallManager
 import com.meshlink.app.mesh.OnlineCallManager.Phase
 import com.meshlink.app.mesh.OnlineCallManager.Role
+import org.webrtc.SurfaceViewRenderer
 
 /**
  * Full-screen "online call" flow. No server: two codes are exchanged by the
@@ -97,12 +106,44 @@ fun OnlineCallScreen(onClose: () -> Unit) {
         pendingAction = null
     }
 
+    var cameraGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var pendingCameraAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        cameraGranted = granted
+        if (granted) {
+            pendingCameraAction?.invoke()
+        } else {
+            Toast.makeText(
+                context,
+                "Camera permission is needed for video. Continuing with voice only.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        pendingCameraAction = null
+    }
+
+    fun withCamera(action: () -> Unit) {
+        if (cameraGranted) action() else {
+            pendingCameraAction = action
+            cameraLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
     fun withMic(action: () -> Unit) {
         if (micGranted) action() else {
             pendingAction = action
             micLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
+
+    fun acceptCall() = withCamera { withMic { OnlineCallManager.acceptRelayed() } }
 
     fun close() {
         OnlineCallManager.reset()
@@ -116,6 +157,19 @@ fun OnlineCallScreen(onClose: () -> Unit) {
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        if (ui.video && (ui.phase == Phase.DIALING || ui.phase == Phase.RINGING ||
+                ui.phase == Phase.CONNECTING || ui.phase == Phase.CONNECTED)
+        ) {
+            VideoCallUi(
+                ui = ui,
+                onClose = { close() },
+                onAccept = { acceptCall() },
+                onDecline = {
+                    OnlineCallManager.declineRelayed()
+                    onClose()
+                },
+            )
+        } else {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(
                 modifier = Modifier
@@ -504,6 +558,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
             }
         }
+        }
     }
 }
 
@@ -583,4 +638,135 @@ private fun formatCallDuration(total: Int): String {
     val m = total / 60
     val s = total % 60
     return "%02d:%02d".format(m, s)
+}
+
+
+@Composable
+private fun VideoCallUi(
+    ui: OnlineCallManager.Ui,
+    onClose: () -> Unit,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    val context = LocalContext.current
+    val egl = OnlineCallManager.eglContext()
+    val remoteRenderer = remember {
+        SurfaceViewRenderer(context).apply {
+            init(egl, null)
+            setEnableHardwareScaler(true)
+        }
+    }
+    val localRenderer = remember {
+        SurfaceViewRenderer(context).apply {
+            init(egl, null)
+            setMirror(true)
+            setEnableHardwareScaler(true)
+            setZOrderMediaOverlay(true)
+        }
+    }
+    DisposableEffect(Unit) {
+        OnlineCallManager.bindRenderers(localRenderer, remoteRenderer)
+        onDispose {
+            OnlineCallManager.unbindRenderers()
+            runCatching { localRenderer.release() }
+            runCatching { remoteRenderer.release() }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(factory = { remoteRenderer }, modifier = Modifier.fillMaxSize())
+
+        Column(modifier = Modifier.align(Alignment.TopStart).padding(18.dp)) {
+            Text(
+                ui.remoteName.ifBlank { ui.peer },
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 19.sp,
+            )
+            Text(
+                when (ui.phase) {
+                    Phase.DIALING -> "Calling…"
+                    Phase.RINGING -> "Incoming video call"
+                    Phase.CONNECTING -> "Connecting…"
+                    Phase.CONNECTED -> formatDuration(ui.seconds)
+                    else -> ""
+                },
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 12.sp,
+            )
+        }
+
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 62.dp, end = 14.dp)
+                .size(104.dp, 148.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF1B1725)),
+        ) {
+            AndroidView(factory = { localRenderer }, modifier = Modifier.fillMaxSize())
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = 34.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            when (ui.phase) {
+                Phase.RINGING -> {
+                    CallControl(Icons.Filled.Call, "Accept", true, onClick = onAccept)
+                    CallControl(Icons.Filled.CallEnd, "Decline", true, danger = true, onClick = onDecline)
+                }
+                Phase.CONNECTED -> {
+                    CallControl(
+                        icon = if (ui.muted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                        label = if (ui.muted) "Unmute" else "Mute",
+                        active = ui.muted,
+                        onClick = { OnlineCallManager.toggleMute() },
+                    )
+                    CallControl(
+                        icon = if (ui.cameraOn) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                        label = "Camera",
+                        active = !ui.cameraOn,
+                        onClick = { OnlineCallManager.setCameraEnabled(!ui.cameraOn) },
+                    )
+                    CallControl(
+                        icon = Icons.Filled.Cameraswitch,
+                        label = "Flip",
+                        active = false,
+                        onClick = { OnlineCallManager.switchCamera() },
+                    )
+                    CallControl(
+                        icon = Icons.Filled.CallEnd,
+                        label = "End",
+                        active = true,
+                        danger = true,
+                        onClick = {
+                            OnlineCallManager.hangup()
+                            onClose()
+                        },
+                    )
+                }
+                else -> CallControl(
+                    icon = Icons.Filled.CallEnd,
+                    label = "Cancel",
+                    active = true,
+                    danger = true,
+                    onClick = {
+                        OnlineCallManager.hangup()
+                        onClose()
+                    },
+                )
+            }
+        }
+    }
 }

@@ -110,6 +110,8 @@ fun HomeScreen(
     var query by remember { mutableStateOf("") }
     var callPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pendingVideoCall by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var videoCallWanted by remember { mutableStateOf(false) }
     var pinnedPeers by remember { mutableStateOf(MeshSettings.pinned(context)) }
     var mutedPeers by remember { mutableStateOf(MeshSettings.muted(context)) }
 
@@ -211,6 +213,54 @@ fun HomeScreen(
     // Calls always stay inside MeshLink: internet first (when online mode is
     // up and the other side is a UIN), then the local Wi-Fi path. Nothing
     // opens the phone's SIM dialer.
+    fun beginVideoCall(peer: String, name: String) {
+        if (engine?.onlineIsConnected == true) {
+            OnlineCallManager.startRelayedCall(peer, name, video = true)
+            onlineCallOpen = true
+        } else if (!onlineEnabled) {
+            videoCallWanted = true
+            callPrompt = peer to name
+        } else {
+            Toast.makeText(
+                context,
+                "The relay is still connecting. Try again in a few seconds.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingVideoCall
+        pendingVideoCall = null
+        if (granted && pending != null) {
+            beginVideoCall(pending.first, pending.second)
+        } else if (!granted) {
+            Toast.makeText(
+                context,
+                "Camera permission is needed for a video call.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    fun startVideoCall(peer: String, name: String) {
+        val isUin = peer.trim().uppercase().startsWith("OFF-")
+        if (!isUin) {
+            Toast.makeText(context, "Video calls need a MeshLink ID (OFF-…).", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingVideoCall = peer to name
+            cameraLauncher.launch(android.Manifest.permission.CAMERA)
+            return
+        }
+        beginVideoCall(peer, name)
+    }
+
     fun startCall(peer: String, name: String) {
         val mesh = engine
         val isUin = peer.trim().uppercase().startsWith("OFF-")
@@ -245,9 +295,14 @@ fun HomeScreen(
         repeat(30) {
             delay(500)
             if (engine?.onlineIsConnected == true) {
-                OnlineCallManager.startRelayedCall(pending.first, pending.second)
+                OnlineCallManager.startRelayedCall(
+                    pending.first,
+                    pending.second,
+                    video = videoCallWanted,
+                )
                 onlineCallOpen = true
                 pendingOnlineCall = null
+                videoCallWanted = false
                 return@LaunchedEffect
             }
         }
@@ -280,6 +335,7 @@ fun HomeScreen(
             chat = openChat,
             onBack = { openPeer = null },
             onCall = { peer, name -> startCall(peer, name) },
+            onVideoCall = { peer, name -> startVideoCall(peer, name) },
         )
     } else {
         Scaffold(
