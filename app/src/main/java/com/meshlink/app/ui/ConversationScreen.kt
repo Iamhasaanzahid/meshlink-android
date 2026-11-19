@@ -719,7 +719,7 @@ fun ConversationScreen(
                     OutlinedTextField(
                         value = newMember,
                         onValueChange = { newMember = it },
-                        label = { Text("Add member (OFF-…)") },
+                        label = { Text("Add member (10-digit ID)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )

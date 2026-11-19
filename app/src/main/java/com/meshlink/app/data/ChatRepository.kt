@@ -2,6 +2,7 @@ package com.meshlink.app.data
 
 import android.content.Context
 import com.meshlink.app.service.MeshService
+import com.meshlink.app.util.isMeshLinkId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -259,7 +260,7 @@ object ChatRepository {
     fun addGroupMember(groupId: String, member: String) {
         val g = GroupStore.get(groupId) ?: return
         val uin = member.trim().uppercase()
-        if (!uin.startsWith("OFF-") || g.members.contains(uin)) return
+        if (!uin.isMeshLinkId() || g.members.contains(uin)) return
         GroupStore.save(groupId, g.name, g.members + uin)
         val sender = appContext?.let { SessionStore.displayName(it) }.orEmpty()
         val invite = "MLGINV|$groupId|${g.name}|${(g.members + uin).joinToString(",")}"
@@ -323,7 +324,7 @@ object ChatRepository {
     fun createGroup(name: String, membersCsv: String): String {
         val title = name.trim().take(40).ifBlank { "New group" }
         val members = membersCsv.split(',', ';', ' ', '\n')
-            .map { it.trim().uppercase() }.filter { it.startsWith("OFF-") }.distinct().toSet()
+            .map { it.trim().uppercase() }.filter { it.isMeshLinkId() }.distinct().toSet()
         val id = "GRP-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase()
         GroupStore.save(id, title, members)
         val ts = System.currentTimeMillis()

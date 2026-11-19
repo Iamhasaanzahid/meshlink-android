@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.26.0 — 2026-11-19 — web-matched UI, MeshLink AI, email verification
+
+### Added
+- **Web-matched design.** The whole app now uses the exact MeshLink purple
+  palette from the web app (dark/light), gradient header and all eight web
+  sections: Chats, Calls, Nearby, MeshLink AI, Status, Starred, Archived and
+  Settings.
+- **MeshLink AI.** New AI tab with assistant chat bubbles, model picker
+  (llama3.2 / phi3 / qwen2.5), editable Ollama server URL and a built-in
+  offline responder, matching the web AI experience.
+- **Email security verification.** Your app-generated 10-digit MeshLink ID is
+  still the real identity. Email is now verified with a 6-digit OTP (hashed,
+  5-minute expiry, 5 attempts) and shown as a Verified badge in Settings.
+
 ## 1.25.0 — 2026-11-19 — QR web linking
 
 ### Added

@@ -15,6 +15,8 @@ object SessionStore {
     private const val KEY_PHONE = "phone_number"
     private const val KEY_AVATAR = "avatar_path"
     private const val KEY_PRIVACY = "privacy_seen"
+    private const val KEY_VERIFIED_EMAIL = "verified_email"
+    private const val KEY_VERIFIED = "email_verified"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -59,6 +61,23 @@ object SessionStore {
         prefs(context).edit()
             .putString(KEY_UIN, uin)
             .putString(KEY_NAME, displayName)
+            .apply()
+    }
+
+    /**
+     * The email is only a security verification for this device. The 10-digit
+     * MeshLink ID remains the working identity and is never replaced by email.
+     */
+    fun verifiedEmail(context: Context): String? =
+        prefs(context).getString(KEY_VERIFIED_EMAIL, null)?.takeIf { it.isNotBlank() }
+
+    fun isVerified(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_VERIFIED, false) && verifiedEmail(context) != null
+
+    fun setVerified(context: Context, email: String) {
+        prefs(context).edit()
+            .putString(KEY_VERIFIED_EMAIL, email.trim())
+            .putBoolean(KEY_VERIFIED, true)
             .apply()
     }
 

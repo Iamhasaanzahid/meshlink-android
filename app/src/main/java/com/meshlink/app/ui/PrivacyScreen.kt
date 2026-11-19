@@ -63,9 +63,9 @@ fun PrivacyScreen(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "MeshLink collects 0% of your data. There is no account, no server, " +
-                "no analytics and no tracking. Messages, calls and contacts are " +
-                "stored only on this phone.",
+            "Your 10-digit MeshLink ID is yours, and messages stay on this phone. " +
+                "The only information MeshLink asks for is the email you use once " +
+                "to verify your identity — no analytics, no ads and no tracking.",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -96,10 +96,10 @@ fun PrivacyScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "• no account and no sign-up\n" +
-                        "• no MeshLink server and no tracking\n" +
+                    "• no phone number and no contact upload\n" +
+                        "• email is used only for verification\n" +
                         "• online mode is optional and off by default\n" +
-                        "• no ads, no analytics, no address-book upload\n" +
+                        "• no ads, no analytics and no tracking\n" +
                         "• no reading your location or your files",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,

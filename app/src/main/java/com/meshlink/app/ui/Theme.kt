@@ -14,67 +14,91 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ----------------------------------------------------------------- brand
-val BrandViolet = Color(0xFF6C4FD8)
-val BrandDeep = Color(0xFF4322A8)
-val BrandLight = Color(0xFF9C86F0)
-val BrandMint = Color(0xFF00C88A)
+/* MeshLink web palette — mirrored exactly from meshlink-web/styles.css so the
+ * native app and the deployed web app feel like the same product. */
+val BrandViolet = Color(0xFF7C3AED)   // --accent (light)
+val BrandDeep = Color(0xFF6D28D9)     // --accent-2 (light)
+val BrandLight = Color(0xFFA78BFA)    // --accent-3
+val BrandMint = Color(0xFF4ADE80)     // --mint (dark)
+val BrandDanger = Color(0xFFFB7185)   // --danger (dark)
+
+val WebDarkBg = Color(0xFF0A0613)
+val WebDarkBgSoft = Color(0xFF0D0819)
+val WebDarkPanel = Color(0xFF130D23)
+val WebDarkPanel2 = Color(0xFF191130)
+val WebDarkSurface = Color(0xFF211740)
+val WebDarkSurface2 = Color(0xFF2B1E51)
+val WebDarkSurface3 = Color(0xFF362665)
+val WebDarkText = Color(0xFFF3EEFF)
+val WebDarkText2 = Color(0xFFC6B8E6)
+val WebDarkMuted = Color(0xFF9282B4)
+
+val WebLightBg = Color(0xFFEFE9FF)
+val WebLightBgSoft = Color(0xFFF7F4FF)
+val WebLightPanel = Color(0xFFFFFFFF)
+val WebLightPanel2 = Color(0xFFFBF9FF)
+val WebLightSurface = Color(0xFFF0EAFF)
+val WebLightSurface2 = Color(0xFFE8DFFF)
+val WebLightSurface3 = Color(0xFFDDD0FF)
+val WebLightText = Color(0xFF1D1135)
+val WebLightText2 = Color(0xFF524168)
+val WebLightMuted = Color(0xFF7C6B97)
 
 private val LightColors = lightColorScheme(
     primary = BrandViolet,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE7E0FF),
-    onPrimaryContainer = Color(0xFF1C0B5E),
-    secondary = Color(0xFF00A884),
+    primaryContainer = WebLightSurface2,
+    onPrimaryContainer = WebLightText,
+    secondary = Color(0xFF059669),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFD2F5EA),
-    onSecondaryContainer = Color(0xFF00382C),
-    tertiary = Color(0xFFB4478F),
+    secondaryContainer = Color(0xFFD1FAE5),
+    onSecondaryContainer = Color(0xFF052E1F),
+    tertiary = Color(0xFFA21CAF),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFD8EF),
-    onTertiaryContainer = Color(0xFF3B002D),
-    background = Color(0xFFF6F4FB),
-    onBackground = Color(0xFF1A1626),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1626),
-    surfaceVariant = Color(0xFFE9E4F5),
-    onSurfaceVariant = Color(0xFF5C5570),
-    outline = Color(0xFF8F89A3),
-    outlineVariant = Color(0xFFDCD6EC),
-    error = Color(0xFFBA1A1A),
+    tertiaryContainer = Color(0xFFFCE7F3),
+    onTertiaryContainer = Color(0xFF701A75),
+    background = WebLightBg,
+    onBackground = WebLightText,
+    surface = WebLightPanel,
+    onSurface = WebLightText,
+    surfaceVariant = WebLightSurface,
+    onSurfaceVariant = WebLightText2,
+    outline = WebLightMuted,
+    outlineVariant = WebLightSurface3,
+    error = Color(0xFFE11D48),
     onError = Color.White,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFC7B7FF),
-    onPrimary = Color(0xFF2A0E78),
-    primaryContainer = Color(0xFF4322A8),
-    onPrimaryContainer = Color(0xFFE7E0FF),
-    secondary = Color(0xFF5CE6C0),
-    onSecondary = Color(0xFF00382C),
-    secondaryContainer = Color(0xFF00513F),
-    onSecondaryContainer = Color(0xFFC9FFEE),
-    tertiary = Color(0xFFFFAFE0),
-    onTertiary = Color(0xFF5A0046),
-    tertiaryContainer = Color(0xFF7C2C64),
-    onTertiaryContainer = Color(0xFFFFD8EF),
-    background = Color(0xFF0E0C15),
-    onBackground = Color(0xFFE9E3F5),
-    surface = Color(0xFF16131F),
-    onSurface = Color(0xFFE9E3F5),
-    surfaceVariant = Color(0xFF2B2638),
-    onSurfaceVariant = Color(0xFFC9C2DA),
-    outline = Color(0xFF938DA6),
-    outlineVariant = Color(0xFF3A3448),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
+    primary = BrandLight,
+    onPrimary = WebDarkPanel,
+    primaryContainer = WebDarkSurface3,
+    onPrimaryContainer = WebDarkText,
+    secondary = BrandMint,
+    onSecondary = WebDarkPanel,
+    secondaryContainer = Color(0xFF064E3B),
+    onSecondaryContainer = Color(0xFFD1FAE5),
+    tertiary = Color(0xFFF0ABFC),
+    onTertiary = WebDarkPanel,
+    tertiaryContainer = Color(0xFF701A75),
+    onTertiaryContainer = Color(0xFFFCE7F3),
+    background = WebDarkBg,
+    onBackground = WebDarkText,
+    surface = WebDarkPanel,
+    onSurface = WebDarkText,
+    surfaceVariant = WebDarkSurface,
+    onSurfaceVariant = WebDarkText2,
+    outline = WebDarkMuted,
+    outlineVariant = WebDarkSurface3,
+    error = BrandDanger,
+    onError = WebDarkPanel,
 )
 
 private val MeshShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(22.dp),
     extraLarge = RoundedCornerShape(30.dp),
 )
 
@@ -83,10 +107,11 @@ private val MeshTypography = Typography().let { base ->
         headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold),
         titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Bold),
         titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        bodyMedium = base.bodyMedium.copy(fontSize = 14.sp),
         labelLarge = TextStyle(
             fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
-            letterSpacing = 0.1.sp,
+            fontSize = 13.sp,
+            letterSpacing = 0.2.sp,
         ),
     )
 }

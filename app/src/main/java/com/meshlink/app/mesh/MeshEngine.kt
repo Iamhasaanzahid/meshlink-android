@@ -5,6 +5,7 @@ import android.net.wifi.p2p.WifiP2pDevice
 import android.util.Log
 import com.meshlink.app.data.MeshSettings
 import com.meshlink.app.util.PermissionsHelper
+import com.meshlink.app.util.isMeshLinkId
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -330,7 +331,7 @@ class MeshEngine(private val context: Context) {
     private fun sendOnlineRaw(destination: String, bytes: ByteArray): Boolean {
         val t = online ?: return false
         if (!t.isConnected) return false
-        if (!destination.trim().uppercase().startsWith("OFF-")) return false
+        if (!destination.isMeshLinkId()) return false
         onlineSender.execute {
             // QoS 1 for files and call signalling: one lost chunk would
             // otherwise stall a photo forever.
@@ -346,7 +347,7 @@ class MeshEngine(private val context: Context) {
      */
     fun sendTyping(destination: String, typing: Boolean): Boolean {
         val dest = destination.trim().uppercase()
-        if (!dest.startsWith("OFF-")) return false
+        if (!dest.isMeshLinkId()) return false
         val t = online ?: return false
         if (!t.isConnected) return false
         val frame = MeshFrame.Frame(
@@ -432,7 +433,7 @@ class MeshEngine(private val context: Context) {
         // Online mode is the only path that crosses the world, so publish
         // first when it is switched on. Local radios still get the frame too,
         // which keeps nearby chats instant and lets both paths race.
-        val onlineOk = if (destination.trim().uppercase().startsWith("OFF-")) {
+        val onlineOk = if (destination.isMeshLinkId()) {
             publishOnline(destination, frames)
         } else false
 
@@ -616,7 +617,7 @@ class MeshEngine(private val context: Context) {
 
         // Online mode only takes over when no local radio has actually heard
         // the other phone. Local Wi-Fi is faster and stays on the LAN.
-        val useOnline = target.startsWith("OFF-") &&
+        val useOnline = target.isMeshLinkId() &&
             online?.isConnected == true &&
             !heardRecently(target)
         if (useOnline) {

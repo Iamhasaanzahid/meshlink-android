@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import com.meshlink.app.util.isMeshLinkId
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.MqttClient
@@ -63,7 +64,7 @@ class OnlineTransport(private val context: Context) {
      */
     fun watchUin(nearbyUin: String) {
         val u = nearbyUin.trim().uppercase()
-        if (!u.startsWith("OFF-") || u == uin) return
+        if (!u.isMeshLinkId() || u == uin) return
         val added = synchronized(relaySubs) {
             if (relaySubs.size >= 24) false else relaySubs.add(u)
         }
@@ -138,7 +139,7 @@ class OnlineTransport(private val context: Context) {
         val dest = destination.trim().uppercase()
         val me = uin
         if (me.isBlank() || dest.isBlank()) return false
-        if (!dest.startsWith("OFF-")) return false
+        if (!dest.isMeshLinkId()) return false
         val c = client ?: return false
         if (!isConnected) return false
         val blob = runCatching { encrypt(pairKey(me, dest), frame) }.getOrNull() ?: return false

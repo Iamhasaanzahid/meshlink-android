@@ -24,12 +24,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -87,6 +92,7 @@ import com.meshlink.app.mesh.OnlineCallManager
 import com.meshlink.app.mesh.CallPhase
 import com.meshlink.app.service.MeshService
 import com.meshlink.app.util.PermissionsHelper
+import com.meshlink.app.util.isMeshLinkId
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -294,9 +300,9 @@ fun HomeScreen(
     }
 
     fun startVideoCall(peer: String, name: String) {
-        val isUin = peer.trim().uppercase().startsWith("OFF-")
+        val isUin = peer.isMeshLinkId()
         if (!isUin) {
-            Toast.makeText(context, "Video calls need a MeshLink ID (OFF-…).", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Video calls need a 10-digit MeshLink ID.", Toast.LENGTH_LONG).show()
             return
         }
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
@@ -311,7 +317,7 @@ fun HomeScreen(
 
     fun startCall(peer: String, name: String) {
         val mesh = engine
-        val isUin = peer.trim().uppercase().startsWith("OFF-")
+        val isUin = peer.isMeshLinkId()
         if (mesh?.onlineIsConnected == true && isUin) {
             OnlineCallManager.startRelayedCall(peer, name)
             onlineCallOpen = true
@@ -390,7 +396,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = groupMembers, onValueChange = { groupMembers = it },
                         label = { Text("Members (MeshLink IDs)") },
-                        placeholder = { Text("OFF-XXXXXX, OFF-YYYYYY") },
+                        placeholder = { Text("1234567890, 9876543210") },
                         modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(6.dp))
                     Text("Everyone needs Online mode for a group to cross countries.",
@@ -401,9 +407,9 @@ fun HomeScreen(
             confirmButton = {
                 TextButton(onClick = {
                     val title = groupName.trim()
-                    if (title.isEmpty() || !groupMembers.contains("OFF-")) {
+                    if (title.isEmpty() || !groupMembers.split(Regex("[,\\s]+")).any { it.isMeshLinkId() }) {
                         Toast.makeText(context,
-                            "Add a name and at least one OFF-… member ID.",
+                            "Add a name and at least one 10-digit MeshLink ID.",
                             Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
@@ -429,6 +435,7 @@ fun HomeScreen(
     } else {
         Scaffold(
             topBar = {
+                if (tab != 3) {
                 val presence = when {
                     status["onlineConnected"] == true -> "Online"
                     (status["wifiLanPeers"] as? Int ?: 0) > 0 -> "Nearby"
@@ -539,89 +546,65 @@ fun HomeScreen(
                         }
                     }
                 }
+                }
             },
             floatingActionButton = {
-                if (tab != 3) {
+                if (tab == 0) {
                     ExtendedFloatingActionButton(
-                        onClick = {
-                            when (tab) {
-                                2 -> { contactName = ""; contactAddress = ""; addContactOpen = true }
-                                else -> newChatOpen = true
-                            }
-                        },
+                        onClick = { newChatOpen = true },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = Color.White,
                         icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                        text = { Text(if (tab == 2) "New contact" else "New chat") },
+                        text = { Text("New chat") },
                     )
                 }
             },
             bottomBar = {
+                // Same eight sections as the web rail. Horizontally scrollable
+                // so every section stays reachable on a phone.
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 0.dp,
                 ) {
-                    NavigationBarItem(
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        selected = tab == 0,
-                        onClick = { tab = 0 },
-                        icon = {
-                            BadgedBox(
-                                badge = {
-                                    val unread = chats.sumOf { it.unread }
-                                    if (unread > 0) {
-                                        Badge { Text(if (unread > 99) "99+" else unread.toString()) }
+                    Row(Modifier.fillMaxWidth()) {
+                        val rail = listOf("Chats", "Calls", "Nearby", "AI", "Status", "Starred", "Archived", "Settings")
+                        rail.forEachIndexed { index, label ->
+                            NavigationBarItem(
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color.White,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primary,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                                selected = tab == index,
+                                onClick = { tab = index },
+                                icon = {
+                                    val icon = when (index) {
+                                        0 -> Icons.Filled.Chat
+                                        1 -> Icons.Filled.Call
+                                        2 -> Icons.Filled.Wifi
+                                        3 -> Icons.Filled.AutoAwesome
+                                        4 -> Icons.Filled.Info
+                                        5 -> Icons.Filled.Star
+                                        6 -> Icons.Filled.Archive
+                                        else -> Icons.Filled.Settings
+                                    }
+                                    if (index == 0) {
+                                        BadgedBox(badge = {
+                                            val unread = chats.sumOf { it.unread }
+                                            if (unread > 0) {
+                                                Badge { Text(if (unread > 99) "99+" else unread.toString()) }
+                                            }
+                                        }) { Icon(icon, contentDescription = label) }
+                                    } else {
+                                        Icon(icon, contentDescription = label)
                                     }
                                 },
-                            ) { Icon(Icons.Filled.Chat, contentDescription = "Chats") }
-                        },
-                        label = { Text("Chats") },
-                    )
-                    NavigationBarItem(
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        selected = tab == 1,
-                        onClick = { tab = 1 },
-                        icon = { Icon(Icons.Filled.Call, contentDescription = "Calls") },
-                        label = { Text("Calls") },
-                    )
-                    NavigationBarItem(
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        selected = tab == 2,
-                        onClick = { tab = 2 },
-                        icon = { Icon(Icons.Filled.Person, contentDescription = "Contacts") },
-                        label = { Text("Contacts") },
-                    )
-                    NavigationBarItem(
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        selected = tab == 3,
-                        onClick = { tab = 3 },
-                        icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
-                        label = { Text("Settings") },
-                    )
+                                label = { Text(label) },
+                            )
+                        }
+                    }
                 }
             },
         ) { padding ->
@@ -666,13 +649,54 @@ fun HomeScreen(
                         },
                         onOnlineCall = { onlineCallOpen = true },
                     )
-                    2 -> ContactsScreen(
-                        contacts = contacts,
-                        onOpen = { contact ->
-                            openPeer = contact.address
-                            openName = contact.name
+                    2 -> NearbyScreen(
+                        status = status,
+                        wifiPeers = wifiPeers,
+                        onRefreshPeers = {
+                            engine?.refreshWifiPeers()
+                            wifiPeers = engine?.wifiPeers() ?: emptyList()
                         },
-                        onDelete = { ChatRepository.deleteContact(it.address) },
+                        onConnectPeer = { engine?.connectWifiPeer(it) },
+                    )
+                    3 -> AiScreen(onBack = { tab = 0 })
+                    4 -> StatusScreen(
+                        status = status,
+                        myUin = myUin,
+                        displayName = displayName,
+                    )
+                    5 -> StarredScreen(
+                        chats = chats,
+                        pinned = pinnedPeers,
+                        onOpen = { chat ->
+                            openPeer = chat.peer
+                            openName = chat.name
+                            ChatRepository.markRead(chat.peer)
+                        },
+                        onTogglePin = { chat ->
+                            MeshSettings.togglePinned(context, chat.peer)
+                            pinnedPeers = MeshSettings.pinned(context)
+                        },
+                        onToggleMute = { chat ->
+                            MeshSettings.toggleMuted(context, chat.peer)
+                            mutedPeers = MeshSettings.muted(context)
+                        },
+                    )
+                    6 -> ArchivedScreen(
+                        chats = chats,
+                        muted = mutedPeers,
+                        onOpen = { chat ->
+                            openPeer = chat.peer
+                            openName = chat.name
+                            ChatRepository.markRead(chat.peer)
+                        },
+                        onTogglePin = { chat ->
+                            MeshSettings.togglePinned(context, chat.peer)
+                            pinnedPeers = MeshSettings.pinned(context)
+                        },
+                        onToggleMute = { chat ->
+                            MeshSettings.toggleMuted(context, chat.peer)
+                            mutedPeers = MeshSettings.muted(context)
+                        },
                     )
                     else -> SettingsScreen(
                         myUin = myUin,

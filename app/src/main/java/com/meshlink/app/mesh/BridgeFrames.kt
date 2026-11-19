@@ -1,5 +1,6 @@
 package com.meshlink.app.mesh
 
+import com.meshlink.app.util.isMeshLinkId
 import java.security.MessageDigest
 
 /**
@@ -37,7 +38,7 @@ object BridgeFrames {
     fun parse(payload: ByteArray): Header? {
         if (payload.size < HEADER) return null
         val dest = String(payload, 0, DEST_SIZE, Charsets.UTF_8).trim().uppercase()
-        if (dest.length != DEST_SIZE || !dest.startsWith("OFF-")) return null
+        if (dest.length != DEST_SIZE || !dest.isMeshLinkId()) return null
         val idHash = (0 until ID_SIZE).joinToString("") { "%02x".format(payload[10 + it]) }
         val seq = ((payload[14].toInt() and 0xFF) shl 8) or (payload[15].toInt() and 0xFF)
         val total = ((payload[16].toInt() and 0xFF) shl 8) or (payload[17].toInt() and 0xFF)
@@ -48,7 +49,7 @@ object BridgeFrames {
     /** Splits [json] into bridge payloads, or returns an empty list. */
     fun payloads(destination: String, messageId: String, json: ByteArray): List<ByteArray> {
         val dest = destination.trim().uppercase()
-        if (dest.length != DEST_SIZE || !dest.startsWith("OFF-")) return emptyList()
+        if (dest.length != DEST_SIZE || !dest.isMeshLinkId()) return emptyList()
         val idHash = MessageDigest.getInstance("SHA-256")
             .digest(messageId.toByteArray(Charsets.UTF_8))
             .copyOfRange(0, ID_SIZE)

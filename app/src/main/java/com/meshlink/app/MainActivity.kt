@@ -16,6 +16,7 @@ import com.meshlink.app.ui.HomeScreen
 import com.meshlink.app.ui.MeshLinkTheme
 import com.meshlink.app.ui.PrivacyScreen
 import com.meshlink.app.ui.SignupScreen
+import com.meshlink.app.ui.VerifyEmailScreen
 import com.meshlink.app.util.PermissionsHelper
 
 class MainActivity : ComponentActivity() {
@@ -45,6 +46,9 @@ class MainActivity : ComponentActivity() {
                 var privacySeen by remember {
                     mutableStateOf(SessionStore.privacySeen(activity))
                 }
+                var verified by remember {
+                    mutableStateOf(SessionStore.isVerified(activity))
+                }
 
                 val uin = sessionUin
                 when {
@@ -61,15 +65,25 @@ class MainActivity : ComponentActivity() {
                     )
 
                     uin == null -> SignupScreen(
-                        onSignupSuccess = { newUin, name ->
+                        onSignupSuccess = { newUin, name, email ->
                             SessionStore.save(activity, newUin, name)
+                            SessionStore.setVerified(activity, email)
                             startMeshService(activity, newUin)
                             sessionUin = newUin
                             displayName = name
+                            verified = true
                             // Permissions are usually granted on the privacy
                             // screen; ask again here for people who skipped it.
                             if (!PermissionsHelper.allGranted(activity)) requestMeshPermissions()
                         }
+                    )
+
+                    !verified -> VerifyEmailScreen(
+                        uin = uin,
+                        onVerified = { email ->
+                            SessionStore.setVerified(activity, email)
+                            verified = true
+                        },
                     )
 
                     else -> HomeScreen(
@@ -80,6 +94,7 @@ class MainActivity : ComponentActivity() {
                             SessionStore.clear(activity)
                             sessionUin = null
                             displayName = ""
+                            verified = false
                         },
                     )
                 }
