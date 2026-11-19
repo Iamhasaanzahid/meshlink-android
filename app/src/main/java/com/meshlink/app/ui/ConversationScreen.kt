@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -142,6 +143,10 @@ fun ConversationScreen(
     var forwardMessage by remember { mutableStateOf<Message?>(null) }
     var replyTo by remember { mutableStateOf<Message?>(null) }
     var infoMessage by remember { mutableStateOf<Message?>(null) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchHitIndex by remember { mutableIntStateOf(0) }
+    var highlightId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(chat.peer) { ChatRepository.markRead(chat.peer) }
     LaunchedEffect(messages.size) {
@@ -369,6 +374,9 @@ fun ConversationScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { searchOpen = !searchOpen }) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search messages", tint = Color.White)
+                    }
                     IconButton(
                         onClick = { onCall(chat.peer, chatTitle(chat)) },
                         modifier = Modifier
@@ -536,11 +544,67 @@ fun ConversationScreen(
             }
         },
     ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        if (searchOpen) {
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { q -> searchQuery = q; searchHitIndex = 0; highlightId = null },
+                            placeholder = { Text("Search this chat") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = {
+                            searchOpen = false
+                            searchQuery = ""
+                            highlightId = null
+                        }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Close search")
+                        }
+                    }
+                    if (searchQuery.isNotBlank()) {
+                        val hits = messages.filter { it.body.contains(searchQuery, ignoreCase = true) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                if (hits.isEmpty()) "No results" else "${searchHitIndex + 1}/${hits.size}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = {
+                                if (hits.isEmpty()) return@TextButton
+                                searchHitIndex = (searchHitIndex - 1 + hits.size) % hits.size
+                                val hit = hits[searchHitIndex]
+                                highlightId = hit.id
+                                val idx = messages.indexOfFirst { it.id == hit.id }
+                                if (idx >= 0) scope.launch { listState.animateScrollToItem(idx) }
+                            }) { Text("Previous") }
+                            TextButton(onClick = {
+                                if (hits.isEmpty()) return@TextButton
+                                searchHitIndex = (searchHitIndex + 1) % hits.size
+                                val hit = hits[searchHitIndex]
+                                highlightId = hit.id
+                                val idx = messages.indexOfFirst { it.id == hit.id }
+                                if (idx >= 0) scope.launch { listState.animateScrollToItem(idx) }
+                            }) { Text("Next") }
+                        }
+                    }
+                }
+            }
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .weight(1f)
                 .background(
                     Brush.verticalGradient(
                         listOf(ChatBackground, Color(0xFFE7DFF7)),
@@ -591,6 +655,7 @@ fun ConversationScreen(
                     }
                     MessageBubble(
                         message = message,
+                        highlighted = message.id == highlightId,
                         progress = progress[message.id],
                         onRetry = { ChatRepository.retry(message) },
                         onImage = { viewerPath = it },
@@ -598,6 +663,7 @@ fun ConversationScreen(
                     )
                 }
             }
+        }
         }
     }
 
@@ -762,6 +828,7 @@ fun ConversationScreen(
 @Composable
 private fun MessageBubble(
     message: Message,
+    highlighted: Boolean = false,
     progress: Int?,
     onRetry: () -> Unit,
     onImage: (String) -> Unit,
@@ -783,7 +850,10 @@ private fun MessageBubble(
             modifier = Modifier
                 .widthIn(max = 300.dp)
                 .clip(bubbleShape)
-                .background(if (message.fromMe) OutgoingBubble else IncomingBubble)
+                .background(
+                    if (highlighted) Color(0xFFFFF0A6)
+                    else if (message.fromMe) OutgoingBubble else IncomingBubble,
+                )
                 .combinedClickable(
                     onClick = { if (message.status == MsgStatus.FAILED) onRetry() },
                     onLongClick = onLongPress,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.17.0 — 2026-11-18
+
+### Added
+- **Search inside a chat.** Tap the search icon in the chat header, type any
+  word, then step through matches with Previous / Next. The matching bubble is
+  highlighted and the list scrolls to it.
+
 ## 1.16.0 — 2026-11-18
 
 ### Added
