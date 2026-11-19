@@ -791,6 +791,16 @@ fun ConversationScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Message info")
                     }
+                    if (m.fromMe && !GroupStore.isGroup(chat.peer)) {
+                        TextButton(onClick = {
+                            ChatRepository.deleteForEveryone(m)
+                            selectedMessage = null
+                        }) {
+                            Icon(Icons.Filled.Delete, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Delete for everyone")
+                        }
+                    }
                     TextButton(onClick = {
                         ChatRepository.deleteMessage(m.id)
                         selectedMessage = null

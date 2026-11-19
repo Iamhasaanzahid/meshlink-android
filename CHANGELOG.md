@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.22.0 — 2026-11-19
+
+### Added
+- **Delete for everyone.** Long-press one of your own messages in a private
+  chat and choose Delete for everyone. The other phone removes it too over the
+  encrypted control channel. In groups the app falls back to deleting your
+  local copy, because each member copy has its own ID.
+
 ## 1.21.0 — 2026-11-19
 
 ### Added

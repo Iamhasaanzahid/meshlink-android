@@ -387,6 +387,26 @@ object ChatRepository {
         }
     }
 
+    /** Ask the other phone to remove a message you sent (private chats). */
+    fun deleteForEveryone(message: Message) {
+        if (!message.fromMe) return
+        if (GroupStore.isGroup(message.chatId)) {
+            deleteMessage(message.id)
+            return
+        }
+        val sender = appContext?.let { SessionStore.displayName(it) }.orEmpty()
+        scope.launch {
+            MeshService.engine?.sendMessage(
+                destination = message.chatId,
+                messageId = UUID.randomUUID().toString(),
+                body = "MLDEL|${message.id}",
+                senderName = sender,
+                allowSms = false,
+            )
+        }
+        deleteMessage(message.id)
+    }
+
     fun retry(message: Message) {
         scope.launch {
             updateStatus(message.id, MsgStatus.SENDING)
@@ -596,6 +616,11 @@ object ChatRepository {
     ) {
         val peer = from.trim()
         if (peer.isEmpty() || body.isEmpty()) return
+
+        if (body.startsWith("MLDEL|")) {
+            deleteMessage(body.removePrefix("MLDEL|").trim())
+            return
+        }
 
         if (body.startsWith("MLRD|")) {
             applyReadReceipt(body.removePrefix("MLRD|").trim())
