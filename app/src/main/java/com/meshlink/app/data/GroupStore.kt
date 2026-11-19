@@ -23,7 +23,8 @@ object GroupStore {
 
     fun all(): Map<String, Group> = synchronized(lock) {
         val p = prefs ?: return emptyMap()
-        cache ?: runCatching {
+        cache?.let { return it.toMap() }
+        runCatching {
             val root = JSONObject(p.getString(KEY, "{}") ?: "{}")
             val map = HashMap<String, Group>()
             root.keys().forEach { id ->
@@ -36,7 +37,7 @@ object GroupStore {
                 map[id] = Group(id, o.optString("name", id), members)
             }
             map
-        }.getOrDefault(emptyMap()).also { cache = it }.toMap()
+        }.getOrDefault(emptyMap()).also { cache = HashMap(it) }
     }
 
     fun get(id: String): Group? = all()[id.trim().uppercase()]

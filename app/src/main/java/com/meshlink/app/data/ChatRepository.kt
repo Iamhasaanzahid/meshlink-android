@@ -246,7 +246,7 @@ object ChatRepository {
     fun createGroup(name: String, membersCsv: String): String {
         val title = name.trim().take(40).ifBlank { "New group" }
         val members = membersCsv.split(',', ';', ' ', '\n')
-            .map { it.trim().uppercase() }.filter { it.startsWith("OFF-") }.distinct()
+            .map { it.trim().uppercase() }.filter { it.startsWith("OFF-") }.distinct().toSet()
         val id = "GRP-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase()
         GroupStore.save(id, title, members)
         val ts = System.currentTimeMillis()
