@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,6 +27,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,7 +45,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.meshlink.app.data.MeshSettings
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import kotlin.math.roundToInt
 import com.meshlink.app.BuildConfig
 
@@ -91,6 +95,30 @@ fun SettingsScreen(
             val message = outcome.getOrNull()?.let { "Web linked · return to your browser" }
                 ?: "Link failed: ${outcome.exceptionOrNull()?.message ?: "unknown error"}"
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Manual pairing (WhatsApp-Web style alternative): the phone shows an
+    // 8-digit code; after the browser claims it the user approves here.
+    var manualSession by remember { mutableStateOf("") }
+    var manualToken by remember { mutableStateOf("") }
+    var manualCode by remember { mutableStateOf("") }
+    var manualState by remember { mutableStateOf("waiting") }
+    LaunchedEffect(manualSession) {
+        if (manualSession.isBlank()) return@LaunchedEffect
+        while (manualSession.isNotBlank()) {
+            val result = QrLink.manualStatus(manualSession)
+            result.onSuccess { info ->
+                val status = info.optString("status", "pending")
+                manualState = when {
+                    status == "approved" -> "approved"
+                    status == "claimed" || info.optBoolean("claimed") -> "claimed"
+                    status == "expired" -> "expired"
+                    else -> "waiting"
+                }
+            }.onFailure { manualState = "expired" }
+            if (manualState == "approved" || manualState == "expired") break
+            delay(1500)
         }
     }
 
@@ -555,6 +583,30 @@ fun SettingsScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Scan QR to link web") }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            QrLink.createManual(myUin, displayName)
+                                .onSuccess { info ->
+                                    manualSession = info.optString("session")
+                                    manualToken = info.optString("token")
+                                    manualCode = info.optString("code")
+                                    manualState = "waiting"
+                                }
+                                .onFailure {
+                                    Toast.makeText(context, "Could not create pairing code", Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Show pairing code instead") }
+                Text(
+                    "Type this 8-digit code in the web app, then approve it here.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
 
@@ -598,6 +650,55 @@ fun SettingsScreen(
         ) { Text("Log out / reset identity") }
 
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (manualCode.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { manualCode = ""; manualSession = "" },
+            title = { Text("Pairing code") },
+            text = {
+                Column {
+                    Text(
+                        manualCode,
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        when (manualState) {
+                            "claimed" -> "Browser found. Tap Approve to finish linking."
+                            "approved" -> "Web linked successfully. You can close this."
+                            "expired" -> "Code expired. Show a new code and try again."
+                            else -> "Open meshlink web → Use pairing code, and type this code."
+                        },
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                when (manualState) {
+                    "claimed" -> TextButton(onClick = {
+                        scope.launch {
+                            QrLink.approveManual(manualSession, manualToken, myUin, displayName)
+                                .onSuccess { manualState = "approved" }
+                                .onFailure {
+                                    manualState = "expired"
+                                    Toast.makeText(context, "Pairing failed or expired", Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    }) { Text("Approve web login") }
+                    "approved" -> TextButton(onClick = {
+                        manualCode = ""; manualSession = ""; manualState = "waiting"
+                    }) { Text("Done") }
+                    else -> TextButton(onClick = {
+                        manualCode = ""; manualSession = ""; manualState = "waiting"
+                    }) { Text("Close") }
+                }
+            },
+        )
     }
 }
 

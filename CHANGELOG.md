@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.26.1 — 2026-11-19 — manual web pairing
+
+### Added
+- **Pairing code for web login.** If scanning a QR is not convenient, open
+  **Settings → Devices → Show pairing code instead**. The phone displays an
+  8-digit code; type it into the web app and tap **Approve web login** on the
+  phone. The code expires in 90 seconds and is single-use, exactly like the QR.
+
 ## 1.26.0 — 2026-11-19 — web-matched UI, MeshLink AI, email verification
 
 ### Added

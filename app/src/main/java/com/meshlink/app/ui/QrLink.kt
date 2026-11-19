@@ -18,6 +18,8 @@ private const val TAG = "MeshLinkQrLink"
  */
 object QrLink {
 
+    private const val API_BASE = "https://meshlink-app.pages.dev"
+
     data class Request(val host: String, val session: String, val token: String) {
         /** Only allow the app's own demo server or an HTTPS MeshLink host. */
         val approveUrl: String
@@ -42,6 +44,65 @@ object QrLink {
         val host = uri.getQueryParameter("h") ?: return null
         if (session.isBlank() || token.isBlank() || host.isBlank()) return null
         return Request(host, session, token)
+    }
+
+    /** Phone-side manual pairing: the phone shows this 8-digit code. */
+    suspend fun createManual(meshId: String, displayName: String): Result<JSONObject> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject()
+                    .put("meshId", meshId)
+                    .put("name", displayName)
+                    .toString()
+                JSONObject(postJson("$API_BASE/api/pair/manual", body))
+            }
+        }
+
+    /** Web-side claim progress; the phone approves once `claimed` is true. */
+    suspend fun manualStatus(session: String): Result<JSONObject> = withContext(Dispatchers.IO) {
+        runCatching {
+            val conn = URL("$API_BASE/api/pair/status?session=$session")
+                .openConnection() as HttpURLConnection
+            conn.connectTimeout = 8_000
+            conn.readTimeout = 8_000
+            val code = conn.responseCode
+            val text = conn.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            conn.disconnect()
+            if (code !in 200..299) throw IllegalStateException("Pairing expired")
+            JSONObject(text)
+        }
+    }
+
+    suspend fun approveManual(
+        session: String,
+        token: String,
+        meshId: String,
+        displayName: String,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val body = JSONObject()
+                .put("session", session)
+                .put("token", token)
+                .put("meshId", meshId)
+                .put("name", displayName)
+                .toString()
+            postJson("$API_BASE/api/pair/approve", body)
+        }
+    }
+
+    private fun postJson(url: String, body: String): String {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 8_000
+        conn.readTimeout = 8_000
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.doOutput = true
+        conn.outputStream.use { out: OutputStream -> out.write(body.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val text = conn.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        conn.disconnect()
+        if (code !in 200..299) throw IllegalStateException("Pairing expired or already used")
+        return text
     }
 
     suspend fun approve(request: Request, meshId: String, displayName: String): Result<String> =
