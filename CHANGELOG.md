@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.28.1 — 2026-11-19 — clean MeshLink identity
+
+### Changed
+- Header subtitle removed: the app now shows only **MeshLink**, with cleaner
+  spacing and a slightly larger wordmark.
+- Drawer and web About text no longer use the “hybrid” wording; they now say
+  “Private by design” / “private messenger + calls”.
+- Browser tab title is now simply **MeshLink**.
+
 ## 1.28.0 — 2026-11-19 — private relay + premium drawer UI
 
 ### Added
@@ -61,7 +70,7 @@
   still work automatically when there is no internet.
 
 ### Changed
-- Android header now carries the MeshLink “HYBRID MESSENGER + CALLS” identity.
+- Android header now carries the clean MeshLink identity.
 - AI setup is branded only as MeshLink AI; no third-party engine name is shown.
 - Live email OTP now sends real 6-digit codes through Resend.
 
@@ -104,7 +113,7 @@
   with MeshLink approves the session and signs the browser in as this phone.
   Only the phone's MeshLink ID and display name are sent — no phone number.
 
-## 1.24.0 — 2026-11-19 — hybrid transport hardening
+## 1.24.0 — 2026-11-19 — transport hardening
 
 ### Fixed
 - **Mobile-data relay fallback.** Online mode no longer gets stuck on one

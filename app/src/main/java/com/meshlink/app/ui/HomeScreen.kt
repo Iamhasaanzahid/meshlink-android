@@ -468,7 +468,7 @@ fun HomeScreen(
                             modifier = Modifier.padding(horizontal = 12.dp),
                         )
                         Text(
-                            "Premium hybrid messenger",
+                            "Private by design",
                             color = BrandLight,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -569,18 +569,10 @@ fun HomeScreen(
                                 Text(
                                     "MeshLink",
                                     color = Color.White,
-                                    fontSize = 26.sp,
+                                    fontSize = 28.sp,
                                     fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.4.sp,
+                                    letterSpacing = 0.2.sp,
                                 )
-                                Text(
-                                    "HYBRID MESSENGER + CALLS",
-                                    color = Color.White.copy(alpha = 0.62f),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 1.8.sp,
-                                )
-                                Spacer(Modifier.height(6.dp))
                                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                     Box(
                                         modifier = Modifier
