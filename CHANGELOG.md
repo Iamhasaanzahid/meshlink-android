@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.27.2 — 2026-11-19 — encrypted web bridge
+
+### Security
+- Web bridge messages are now AES-GCM encrypted with a key derived from the two
+  MeshLink IDs, matching the phone-to-phone online mode. The public MQTT relay
+  only sees ciphertext plus the sender ID.
+- Old plaintext bridge messages are still accepted during the upgrade.
+
 ## 1.27.1 — 2026-11-19 — linked-device sync
 
 ### Added

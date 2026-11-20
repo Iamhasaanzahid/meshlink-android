@@ -3,6 +3,7 @@ package com.meshlink.app.mesh
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Base64
 import android.util.Log
 import com.meshlink.app.util.isMeshLinkId
 import org.json.JSONObject
@@ -166,17 +167,32 @@ class OnlineTransport(private val context: Context) {
         }
     }
 
-    /** Sends the same small JSON envelope the web app uses to the web bridge. */
-    fun publishWebBridge(destination: String, payload: String): Boolean {
+    /**
+     * Sends a small JSON envelope to the web bridge, encrypted with AES-GCM.
+     * [keyPeer] is the account whose web session should be able to read it:
+     * the recipient for a normal message, or this phone's own ID for the
+     * linked-device copy.
+     */
+    fun publishWebBridge(destination: String, payload: String, keyPeer: String = destination): Boolean {
         val dest = destination.trim().uppercase()
-        if (!dest.isMeshLinkId() || !isConnected) {
+        val peer = keyPeer.trim().uppercase()
+        if (!dest.isMeshLinkId() || !peer.isMeshLinkId() || !isConnected) {
             Log.w(TAG, "web bridge skipped: online=${isConnected} dest=$dest")
             return false
         }
         return runCatching {
+            val encrypted = OnlineCrypto.encrypt(
+                OnlineCrypto.pairKey(uin, peer),
+                payload.toByteArray(Charsets.UTF_8),
+                random,
+            )
+            val wire = JSONObject()
+                .put("u", uin)
+                .put("e", Base64.encodeToString(encrypted, Base64.NO_WRAP))
+                .toString()
             client?.publish(
                 "$WEB_TOPIC_ROOT/$dest",
-                MqttMessage(payload.toByteArray(Charsets.UTF_8)).apply { qos = 0; isRetained = false },
+                MqttMessage(wire.toByteArray(Charsets.UTF_8)).apply { qos = 0; isRetained = false },
             )
             Log.i(TAG, "web bridge published to $dest")
             true
@@ -307,9 +323,15 @@ class OnlineTransport(private val context: Context) {
     /** Converts a web-app JSON message into a normal MeshLink text frame. */
     private fun handleWebMessage(topic: String, message: MqttMessage?) {
         val raw = runCatching { String(message?.payload ?: return, Charsets.UTF_8) }.getOrNull() ?: return
-        val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
-        val from = data.optString("u").replace(Regex("\\D"), "").take(10)
+        val wire = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val from = wire.optString("u").replace(Regex("\\D"), "").take(10)
         if (!from.isMeshLinkId()) return
+        val data = if (wire.has("e")) {
+            val blob = runCatching { Base64.decode(wire.optString("e"), Base64.NO_WRAP) }.getOrNull()
+                ?: return
+            val plain = OnlineCrypto.decrypt(OnlineCrypto.pairKey(uin, from), blob) ?: return
+            runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
+        } else wire
         val selfSync = data.optBoolean("s", false) || data.optString("s") == "1"
         if (selfSync) {
             // A message typed in the paired web app. Show it in the phone's
