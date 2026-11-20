@@ -509,6 +509,14 @@ private suspend fun chatWithEngine(
     var connection: HttpURLConnection? = null
     try {
         val messages = JSONArray()
+        messages.put(
+            JSONObject()
+                .put("role", "system")
+                .put(
+                    "content",
+                    "You are MeshLink AI, a warm private on-device assistant. Detect the user's emotion and reply with empathy. Keep answers concise, helpful and respectful. Reply in the user's language (English or Roman Urdu).",
+                ),
+        )
         history.forEach { message ->
             messages.put(
                 JSONObject()
@@ -559,7 +567,7 @@ private suspend fun chatWithEngine(
 /** Built-in MeshLink answers when no local engine is reachable. */
 private fun localReply(question: String): String {
     val low = question.trim().lowercase()
-    return when {
+    val base = when {
         Regex("^(hi|hello|salam|assalam|yo)\\b").containsMatchIn(low) ->
             "Salam! Main MeshLink AI — your offline assistant. Ask me about chats, groups, calls or the mesh. 💜"
 
@@ -592,5 +600,25 @@ private fun localReply(question: String): String {
 
         else ->
             "Main yahan hoon 💜. Ask me about chats, groups, calls, the offline mesh, vault/PIN security, or QR device linking — in English or Roman Urdu."
+    }
+    val emotion = detectEmotion(question)
+    return when (emotion) {
+        "sad" -> "I'm sorry you're feeling low right now. 💜 " + base
+        "angry" -> "I understand the frustration. Let's handle it step by step. 💜 " + base
+        "anxious" -> "Take a breath — we'll sort this out together. 💜 " + base
+        "happy" -> "Love that energy! 😊 " + base
+        else -> base
+    }
+}
+
+/** Lightweight emotion check so MeshLink AI can answer with empathy. */
+private fun detectEmotion(text: String): String {
+    val low = text.trim().lowercase()
+    return when {
+        Regex("sad|cry|dukhi|depress|lonely|broken|tired|rona|khush nahi|upset").containsMatchIn(low) -> "sad"
+        Regex("angry|gussa|furious|hate|pagal|bhadwa|irritat").containsMatchIn(low) -> "angry"
+        Regex("anxious|worried|tension|stress|pareshan|nervous|scared|dar|panic").containsMatchIn(low) -> "anxious"
+        Regex("happy|khush|great|awesome|love|shukriya|thanks|excited|mast").containsMatchIn(low) -> "happy"
+        else -> "neutral"
     }
 }

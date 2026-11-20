@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +21,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,6 +54,8 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import kotlin.math.roundToInt
 import com.meshlink.app.BuildConfig
+import com.meshlink.app.util.AppUpdater
+import com.meshlink.app.util.AppUpdate
 
 @Composable
 fun SettingsScreen(
@@ -84,6 +90,11 @@ fun SettingsScreen(
     var brokerDraft by remember(onlineBroker) { mutableStateOf(onlineBroker) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var updateInfo by remember { mutableStateOf<AppUpdate?>(null) }
+    var updateChecking by remember { mutableStateOf(false) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableStateOf(0f) }
+    var updateError by remember { mutableStateOf<String?>(null) }
     val qrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         val request = QrLink.parse(result.contents.orEmpty())
         if (request == null) {
@@ -632,6 +643,96 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onExportChats) { Text("Export backup file") }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionTitle("App updates")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("Current version: ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Check GitHub releases for a newer MeshLink APK and install it in place.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                updateChecking = true
+                                updateError = null
+                                updateInfo = null
+                                val info = AppUpdater.check()
+                                updateChecking = false
+                                if (info == null) {
+                                    updateError = "Could not reach the update server."
+                                } else if (AppUpdater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
+                                    updateInfo = info
+                                } else {
+                                    updateError = "You are up to date (${BuildConfig.VERSION_NAME})."
+                                }
+                            }
+                        },
+                        enabled = !updateChecking && !updateDownloading,
+                        shape = RoundedCornerShape(10.dp),
+                    ) { Text(if (updateChecking) "Checking…" else "Check for updates") }
+                    if (updateChecking) {
+                        Spacer(Modifier.width(10.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                }
+                updateInfo?.let { info ->
+                    Spacer(Modifier.height(10.dp))
+                    Text("New version: ${info.version}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    if (info.notes.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            info.notes.take(400),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                updateDownloading = true
+                                updateProgress = 0f
+                                val file = AppUpdater.download(context, info.apkUrl) { p ->
+                                    updateProgress = p
+                                }
+                                updateDownloading = false
+                                if (file == null) {
+                                    updateError = "Download failed."
+                                } else if (AppUpdater.canInstall(context)) {
+                                    AppUpdater.install(context, file)
+                                } else {
+                                    updateError = "Allow MeshLink to install apps in Android settings."
+                                }
+                            }
+                        },
+                        enabled = !updateDownloading,
+                        shape = RoundedCornerShape(10.dp),
+                    ) { Text(if (updateDownloading) "Downloading…" else "Download & install") }
+                    if (updateDownloading) {
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { updateProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                updateError?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
 

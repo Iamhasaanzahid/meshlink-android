@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.29.0 — 2026-11-20 — in-app updates + emotion-aware AI
+
+### Added
+- Settings → App updates checks the latest MeshLink GitHub release, shows the
+  version and notes, downloads the APK and opens the Android installer in place.
+- MeshLink AI now detects the user's emotional tone (sad, angry, anxious, happy)
+  and adds an empathetic opening when the built-in responder answers. A system
+  prompt asks local engines to do the same.
+
 ## 1.28.1 — 2026-11-19 — clean MeshLink identity
 
 ### Changed
