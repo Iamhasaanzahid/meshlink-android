@@ -30,7 +30,7 @@ import kotlin.concurrent.thread
 class WifiDirectTransport(private val context: Context) {
 
     companion object {
-        private const val TAG = "MeshLinkWifiDirect"
+        private const val TAG = "MhzalyWifiDirect"
         const val PORT = 8988
         private const val RECONNECT_COOLDOWN_MS = 15_000L
     }

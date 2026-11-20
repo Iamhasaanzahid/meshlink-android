@@ -95,7 +95,7 @@ fun CallsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Call another MeshLink phone over Wi-Fi Direct — free, " +
+                        "Call another Mhzaly phone over Wi-Fi Direct — free, " +
                             "phone to phone, without internet. Or use a normal SIM call.",
                         fontSize = 13.sp,
                         lineHeight = 19.sp,

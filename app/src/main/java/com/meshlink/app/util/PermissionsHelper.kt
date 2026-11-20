@@ -27,12 +27,12 @@ object PermissionsHelper {
             Item(
                 Manifest.permission.RECORD_AUDIO,
                 "Microphone",
-                "Only while you are in a MeshLink call. Nothing is recorded or uploaded.",
+                "Only while you are in a Mhzaly call. Nothing is recorded or uploaded.",
             ),
             Item(
                 Manifest.permission.CALL_PHONE,
                 "Phone calls",
-                "Places a normal SIM call when a MeshLink call cannot connect.",
+                "Places a normal SIM call when a Mhzaly call cannot connect.",
             ),
             Item(
                 Manifest.permission.MODIFY_AUDIO_SETTINGS,
@@ -45,17 +45,17 @@ object PermissionsHelper {
             list += Item(
                 Manifest.permission.BLUETOOTH_SCAN,
                 "Bluetooth scan",
-                "Finds nearby MeshLink phones over Bluetooth LE.",
+                "Finds nearby Mhzaly phones over Bluetooth LE.",
             )
             list += Item(
                 Manifest.permission.BLUETOOTH_CONNECT,
                 "Bluetooth connect",
-                "Connects to nearby MeshLink phones over Bluetooth LE.",
+                "Connects to nearby Mhzaly phones over Bluetooth LE.",
             )
             list += Item(
                 Manifest.permission.BLUETOOTH_ADVERTISE,
                 "Bluetooth advertise",
-                "Lets other MeshLink phones find this phone.",
+                "Lets other Mhzaly phones find this phone.",
             )
         }
 
@@ -68,7 +68,7 @@ object PermissionsHelper {
             list += Item(
                 Manifest.permission.NEARBY_WIFI_DEVICES,
                 "Nearby devices",
-                "Finds MeshLink phones on the same Wi-Fi network or hotspot.",
+                "Finds Mhzaly phones on the same Wi-Fi network or hotspot.",
             )
         }
 
@@ -78,7 +78,7 @@ object PermissionsHelper {
             list += Item(
                 Manifest.permission.ACCESS_COARSE_LOCATION,
                 "Location",
-                "Android requires this to scan for nearby Wi-Fi Direct phones. MeshLink never reads or stores your location.",
+                "Android requires this to scan for nearby Wi-Fi Direct phones. Mhzaly never reads or stores your location.",
             )
             list += Item(
                 Manifest.permission.ACCESS_FINE_LOCATION,
@@ -105,12 +105,12 @@ object PermissionsHelper {
         Item(
             Manifest.permission.RECEIVE_SMS,
             "Receive SMS",
-            "Reads MeshLink messages that arrive as SMS. Personal SMS are never opened or stored.",
+            "Reads Mhzaly messages that arrive as SMS. Personal SMS are never opened or stored.",
         ),
         Item(
             Manifest.permission.READ_PHONE_STATE,
             "Active SIM",
-            "Picks the right SIM for MeshLink SMS on dual-SIM phones. No call history or contacts are read.",
+            "Picks the right SIM for Mhzaly SMS on dual-SIM phones. No call history or contacts are read.",
         ),
     )
 

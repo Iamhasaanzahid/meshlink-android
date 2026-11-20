@@ -30,7 +30,7 @@ import kotlin.concurrent.thread
 class LanTransport(private val context: Context) {
 
     companion object {
-        private const val TAG = "MeshLinkLan"
+        private const val TAG = "MhzalyLan"
 
         /** UDP port used for LAN mesh traffic. */
         const val PORT = 8991

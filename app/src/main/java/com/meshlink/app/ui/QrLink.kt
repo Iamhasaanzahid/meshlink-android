@@ -9,7 +9,7 @@ import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val TAG = "MeshLinkQrLink"
+private const val TAG = "MhzalyQrLink"
 
 /**
  * Handles a `meshlink://pair` QR scanned from the web app and approves the

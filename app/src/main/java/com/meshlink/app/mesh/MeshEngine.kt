@@ -43,7 +43,7 @@ enum class TransportType {
 class MeshEngine(private val context: Context) {
 
     companion object {
-        private const val TAG = "MeshLinkMesh"
+        private const val TAG = "MhzalyMesh"
         private const val DEDUPE_CACHE = 512
 
         /** [4-byte message hash][seq][total][data] */

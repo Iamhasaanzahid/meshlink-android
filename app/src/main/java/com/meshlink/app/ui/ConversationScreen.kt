@@ -388,7 +388,7 @@ fun ConversationScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                if (peerTyping) "typing…" else "MeshLink ID · ${chat.peer}",
+                                if (peerTyping) "typing…" else "Mhzaly ID · ${chat.peer}",
                                 fontSize = 11.sp,
                                 color = if (peerTyping) BrandMint else Color.White.copy(alpha = 0.75f),
                                 fontWeight = if (peerTyping) FontWeight.SemiBold else FontWeight.Normal,

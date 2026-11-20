@@ -20,6 +20,10 @@ data class AppUpdate(
 )
 
 object AppUpdater {
+    /** Human-facing releases page, used by the “Open in browser” action. */
+    const val RELEASES_URL =
+        "https://github.com/Iamhasaanzahid/meshlink-android/releases/latest"
+
     private const val LATEST_URL =
         "https://api.github.com/repos/Iamhasaanzahid/meshlink-android/releases/latest"
 
@@ -32,7 +36,7 @@ object AppUpdater {
             connection.connectTimeout = 10_000
             connection.readTimeout = 15_000
             connection.setRequestProperty("Accept", "application/vnd.github+json")
-            connection.setRequestProperty("User-Agent", "MeshLink-App-Updater")
+            connection.setRequestProperty("User-Agent", "Mhzaly-App-Updater")
             if (connection.responseCode !in 200..299) return@withContext null
             val body = connection.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (body.isBlank()) return@withContext null
@@ -84,10 +88,10 @@ object AppUpdater {
             connection.requestMethod = "GET"
             connection.connectTimeout = 15_000
             connection.readTimeout = 60_000
-            connection.setRequestProperty("User-Agent", "MeshLink-App-Updater")
+            connection.setRequestProperty("User-Agent", "Mhzaly-App-Updater")
             if (connection.responseCode !in 200..299) return@withContext null
             val total = connection.contentLengthLong
-            val file = File(context.cacheDir, "MeshLink-update.apk")
+            val file = File(context.cacheDir, "Mhzaly-update.apk")
             connection.inputStream.use { input ->
                 FileOutputStream(file).use { output ->
                     val buffer = ByteArray(64 * 1024)

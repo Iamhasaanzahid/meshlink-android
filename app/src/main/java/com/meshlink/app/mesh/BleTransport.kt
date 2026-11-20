@@ -37,7 +37,7 @@ import java.util.UUID
 class BleTransport(private val context: Context) {
 
     companion object {
-        private const val TAG = "MeshLinkBle"
+        private const val TAG = "MhzalyBle"
 
         val SERVICE_UUID: UUID = UUID.fromString("6d657368-6c69-6e6b-0001-000000000000")
         val FRAME_CHAR_UUID: UUID = UUID.fromString("6d657368-6c69-6e6b-0002-000000000000")

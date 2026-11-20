@@ -134,7 +134,7 @@ fun VerifyEmailScreen(uin: String, onVerified: (email: String) -> Unit) {
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                "Secure your MeshLink ID",
+                "Secure your Mhzaly ID",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 color = VerifyPurple,
@@ -156,7 +156,7 @@ fun VerifyEmailScreen(uin: String, onVerified: (email: String) -> Unit) {
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Your MeshLink ID", fontSize = 12.sp, color = VerifyMuted)
+                    Text("Your Mhzaly ID", fontSize = 12.sp, color = VerifyMuted)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         uin,

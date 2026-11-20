@@ -13,7 +13,7 @@ import com.meshlink.app.data.SessionStore
 import com.meshlink.app.service.startMeshService
 import com.meshlink.app.service.stopMeshService
 import com.meshlink.app.ui.HomeScreen
-import com.meshlink.app.ui.MeshLinkTheme
+import com.meshlink.app.ui.MhzalyTheme
 import com.meshlink.app.ui.PrivacyScreen
 import com.meshlink.app.ui.SignupScreen
 import com.meshlink.app.ui.VerifyEmailScreen
@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
         val activity = this
         setContent {
-            MeshLinkTheme {
+            MhzalyTheme {
                 var sessionUin by remember { mutableStateOf(SessionStore.uin(activity)) }
                 var displayName by remember {
                     mutableStateOf(SessionStore.displayName(activity))

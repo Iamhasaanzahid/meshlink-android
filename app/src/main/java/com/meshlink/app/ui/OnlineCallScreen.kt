@@ -234,7 +234,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "Works anywhere both phones have internet (Wi-Fi or mobile data). " +
-                                "MeshLink has no call server: the two phones exchange one code each " +
+                                "Mhzaly has no call server: the two phones exchange one code each " +
                                 "and then talk directly. Audio is encrypted end to end with " +
                                 "DTLS-SRTP, so nobody in between can listen.",
                             fontSize = 12.sp,
@@ -356,7 +356,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                     Phase.RINGING -> {
                         Spacer(Modifier.height(20.dp))
                         Text(
-                            ui.remoteName.ifBlank { "MeshLink call" },
+                            ui.remoteName.ifBlank { "Mhzaly call" },
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Bold,
@@ -364,7 +364,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Incoming MeshLink call",
+                            "Incoming Mhzaly call",
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                             fontSize = 15.sp,
@@ -507,7 +507,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                     Phase.CONNECTED -> {
                         Spacer(Modifier.height(20.dp))
                         Text(
-                            ui.remoteName.ifBlank { "MeshLink call" },
+                            ui.remoteName.ifBlank { "Mhzaly call" },
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Bold,
@@ -642,7 +642,7 @@ private fun CallControl(
 private fun copyCode(context: Context, code: String) {
     runCatching {
         val cm = context.getSystemService(ClipboardManager::class.java)
-        cm?.setPrimaryClip(ClipData.newPlainText("MeshLink call code", code))
+        cm?.setPrimaryClip(ClipData.newPlainText("Mhzaly call code", code))
         Toast.makeText(context, "Call code copied", Toast.LENGTH_SHORT).show()
     }
 }

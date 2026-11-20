@@ -155,7 +155,9 @@ fun SignupScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("MeshLink", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Purple)
+            MeshMark(76.dp)
+            Spacer(Modifier.height(16.dp))
+            Text("Mhzaly", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Purple)
             Spacer(Modifier.height(4.dp))
             Text("Free Secure Messaging", fontSize = 16.sp, color = Muted)
             Spacer(Modifier.height(24.dp))
@@ -163,7 +165,7 @@ fun SignupScreen(
             when (step) {
                 SignupStep.DETAILS -> {
                     Text(
-                        "Your email is used only to verify this device — your MeshLink ID stays your identity.",
+                        "Your email is used only to verify this device — your Mhzaly ID stays your identity.",
                         fontSize = 13.sp,
                         color = Muted,
                     )
@@ -210,7 +212,7 @@ fun SignupScreen(
                     Spacer(Modifier.height(6.dp))
                     Text("Code sent to ${email.trim()}", fontSize = 13.sp, color = Muted)
                     Spacer(Modifier.height(4.dp))
-                    Text("MeshLink ID: $generatedUin", fontSize = 12.sp, color = Purple)
+                    Text("Mhzaly ID: $generatedUin", fontSize = 12.sp, color = Purple)
                     Spacer(Modifier.height(18.dp))
 
                     OutlinedTextField(
@@ -360,7 +362,7 @@ fun SignupScreen(
                             contentColor = Color.White,
                         ),
                     ) {
-                        Text("Open MeshLink", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("Open Mhzaly", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

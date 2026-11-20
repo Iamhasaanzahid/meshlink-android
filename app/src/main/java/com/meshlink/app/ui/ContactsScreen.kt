@@ -38,7 +38,7 @@ fun ContactsScreen(
     if (contacts.isEmpty()) {
         EmptyState(
             title = "No contacts",
-            body = "Save a friend's MeshLink ID or phone number. " +
+            body = "Save a friend's Mhzaly ID or phone number. " +
                 "Contacts live only on this phone.",
         )
         return

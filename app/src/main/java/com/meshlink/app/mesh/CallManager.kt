@@ -75,7 +75,7 @@ data class CallUiState(
  */
 object CallManager {
 
-    private const val TAG = "MeshLinkCall"
+    private const val TAG = "MhzalyCall"
     private const val AUDIO_PORT = 8990
     private const val SAMPLE_RATE = 8_000
     private const val CHUNK_BYTES = 320 // 20 ms of 16-bit mono

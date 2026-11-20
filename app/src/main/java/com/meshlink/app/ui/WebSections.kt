@@ -143,7 +143,7 @@ fun StatusScreen(status: Map<String, Any>, myUin: String, displayName: String) {
             SectionTitle("Mesh status", "Your identity and live transports", tokens.sky)
             WebInfoCard(
                 rows = listOf(
-                    "MeshLink ID" to myUin,
+                    "Mhzaly ID" to myUin,
                     "Name" to displayName,
                     "Internet relay" to if (status["onlineConnected"] == true) "Connected" else "Offline",
                     "Wi-Fi Direct peers" to (status["wifiLanPeers"] as? Int ?: 0).toString(),
@@ -167,7 +167,7 @@ fun StatusScreen(status: Map<String, Any>, myUin: String, displayName: String) {
                 ) {
                     Text(
                         "Messages are end-to-end encrypted on this device. Your 10-digit " +
-                            "MeshLink ID is your real identity — email is only used for security verification.",
+                            "Mhzaly ID is your real identity — email is only used for security verification.",
                         modifier = Modifier.padding(18.dp),
                         fontSize = 13.sp,
                         lineHeight = 19.sp,

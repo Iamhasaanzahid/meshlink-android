@@ -257,7 +257,7 @@ class MeshService : Service() {
                 CHANNEL_CALLS,
                 "Calls",
                 NotificationManager.IMPORTANCE_HIGH,
-            ).apply { description = "Incoming MeshLink calls" }
+            ).apply { description = "Incoming Mhzaly calls" }
         )
     }
 
@@ -341,7 +341,7 @@ class MeshService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_CALLS)
-            .setContentTitle("Incoming MeshLink call")
+            .setContentTitle("Incoming Mhzaly call")
             .setContentText("${state.name.ifBlank { state.peer }} is calling over Wi-Fi Direct")
             .setSmallIcon(R.drawable.ic_meshlink_notification)
             .setOngoing(true)

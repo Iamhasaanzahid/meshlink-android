@@ -63,8 +63,8 @@ fun PrivacyScreen(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Your 10-digit MeshLink ID is yours, and messages stay on this phone. " +
-                "The only information MeshLink asks for is the email you use once " +
+            "Your 10-digit Mhzaly ID is yours, and messages stay on this phone. " +
+                "The only information Mhzaly asks for is the email you use once " +
                 "to verify your identity — no analytics, no ads and no tracking.",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -88,7 +88,7 @@ fun PrivacyScreen(
                     )
                     Spacer(Modifier.padding(6.dp, 0.dp, 0.dp, 0.dp))
                     Text(
-                        "What MeshLink never does",
+                        "What Mhzaly never does",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -161,11 +161,11 @@ fun PrivacyScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "MeshLink does not ask for SMS permission now. Android warns " +
+                    "Mhzaly does not ask for SMS permission now. Android warns " +
                         "that SMS can cost money, and that warning is true: it is " +
                         "your operator's normal SMS rate. Turn on \"SMS fallback\" " +
                         "in Settings only if you want messages to reach a phone " +
-                        "with no MeshLink nearby. Your number is never used unless " +
+                        "with no Mhzaly nearby. Your number is never used unless " +
                         "you type it in Settings.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,

@@ -40,7 +40,7 @@ import javax.crypto.spec.SecretKeySpec
 class OnlineTransport(private val context: Context) {
 
     companion object {
-        private const val TAG = "MeshLinkOnline"
+        private const val TAG = "MhzalyOnline"
         private const val TOPIC_ROOT = "meshlink/v1"
         /** Shared topic with the web app (plain UTF-8 JSON, no app crypto). */
         private const val WEB_TOPIC_ROOT = "meshlink/web"

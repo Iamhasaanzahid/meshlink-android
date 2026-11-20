@@ -289,7 +289,7 @@ private val MeshTypography = Typography().let { base ->
 }
 
 @Composable
-fun MeshLinkTheme(
+fun MhzalyTheme(
     // Kept for source compatibility; the persisted Dark / Light / System choice
     // takes precedence as soon as it has been loaded from SharedPreferences.
     darkTheme: Boolean = true,

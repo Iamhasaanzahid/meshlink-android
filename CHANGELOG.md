@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.32.0 — 2026-11-20 — Mhzaly rebrand
+
+### Changed
+- The app is now named **Mhzaly** everywhere — signup, chats, calls, AI, notifications and the web app.
+- New premium brand mark: violet-to-indigo tile, white speech bubble, bold “T” and a mint spark. Used for the launcher icon, in-app mark, notification glyph and web favicon.
+- Internal package, 10-digit identity format and update endpoint are unchanged, so this installs as a normal update and keeps all data.
+
+## 1.31.1 — 2026-11-20 — one-tap update
+
+### Changed
+- Settings → App updates now has a single **Update** button that checks GitHub, downloads the newest APK and opens the installer in place — no browser needed. Release notes are clipped to three lines.
+- Added **Open in browser** as a backup path that opens the latest release (or the direct APK once detected) in the browser.
+
 ## 1.31.0 — 2026-11-20 — WhatsApp-style send queue + premium mobile UI + smarter AI
 
 ### Added

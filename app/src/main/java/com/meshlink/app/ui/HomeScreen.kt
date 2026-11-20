@@ -329,7 +329,7 @@ fun HomeScreen(
     fun startVideoCall(peer: String, name: String) {
         val isUin = peer.isMeshLinkId()
         if (!isUin) {
-            Toast.makeText(context, "Video calls need a 10-digit MeshLink ID.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Video calls need a 10-digit Mhzaly ID.", Toast.LENGTH_LONG).show()
             return
         }
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
@@ -375,7 +375,7 @@ fun HomeScreen(
         Toast.makeText(
             context,
             "No local call path right now. Move closer for Wi-Fi, or save the " +
-                "friend's MeshLink ID to call over the internet.",
+                "friend's Mhzaly ID to call over the internet.",
             Toast.LENGTH_LONG,
         ).show()
     }
@@ -433,7 +433,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = groupMembers, onValueChange = { groupMembers = it },
-                        label = { Text("Members (MeshLink IDs)") },
+                        label = { Text("Members (Mhzaly IDs)") },
                         placeholder = { Text("1234567890, 9876543210") },
                         modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(6.dp))
@@ -447,7 +447,7 @@ fun HomeScreen(
                     val title = groupName.trim()
                     if (title.isEmpty() || !groupMembers.split(Regex("[,\\s]+")).any { it.isMeshLinkId() }) {
                         Toast.makeText(context,
-                            "Add a name and at least one 10-digit MeshLink ID.",
+                            "Add a name and at least one 10-digit Mhzaly ID.",
                             Toast.LENGTH_SHORT).show()
                         return@TextButton
                     }
@@ -533,7 +533,7 @@ fun HomeScreen(
                                 )
                                 Spacer(Modifier.height(14.dp))
                                 Text(
-                                    "MeshLink",
+                                    "Mhzaly",
                                     color = Color.White,
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -677,7 +677,7 @@ fun HomeScreen(
                                     )
                                     Spacer(Modifier.width(16.dp))
                                     Text(
-                                        "MeshLink AI",
+                                        "Mhzaly AI",
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium,
@@ -737,7 +737,7 @@ fun HomeScreen(
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "MeshLink",
+                                    "Mhzaly",
                                     color = Color.White,
                                     fontSize = 25.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -769,7 +769,7 @@ fun HomeScreen(
                                     Icon(Icons.Filled.Info, contentDescription = "Status", tint = Color.White)
                                 }
                                 IconButton(onClick = { aiOpen = true }) {
-                                    Icon(Icons.Filled.AutoAwesome, contentDescription = "MeshLink AI", tint = Color.White)
+                                    Icon(Icons.Filled.AutoAwesome, contentDescription = "Mhzaly AI", tint = Color.White)
                                 }
                                 IconButton(onClick = { groupDialog = true }, enabled = tab == 0) {
                                     Icon(Icons.Filled.Add, contentDescription = "New group",
@@ -1091,7 +1091,7 @@ fun HomeScreen(
                             engine?.refreshWifiPeers()
                             wifiPeers = engine?.wifiPeers() ?: emptyList()
                         },
-                        onExportChats = { exportLauncher.launch("meshlink-backup.json") },
+                        onExportChats = { exportLauncher.launch("mhzaly-backup.json") },
                         onLogout = onLogout,
                     )
                 }
@@ -1177,7 +1177,7 @@ fun HomeScreen(
             title = { Text("Call over the internet?") },
             text = {
                 Text(
-                    "This contact is a MeshLink ID, not a nearby radio. The call goes " +
+                    "This contact is a Mhzaly ID, not a nearby radio. The call goes " +
                         "through the online relay over mobile data or any Wi-Fi — " +
                         "anywhere in the world.\n\nTurn on Online mode and connect?",
                 )

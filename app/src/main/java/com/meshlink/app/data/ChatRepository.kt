@@ -479,7 +479,7 @@ object ChatRepository {
             try {
                 // A database problem here must never take the whole app down.
                 runCatching { retryPendingNow() }
-                    .onFailure { android.util.Log.w("MeshLinkRepo", "retryPending failed", it) }
+                    .onFailure { android.util.Log.w("MhzalyRepo", "retryPending failed", it) }
             } finally {
                 retryGate.set(false)
             }
@@ -992,7 +992,7 @@ object ChatRepository {
                 contactsArr.put(org.json.JSONObject().put("name", c.getString(0)).put("address", c.getString(1)))
             }
         }
-        root.put("app", "MeshLink")
+        root.put("app", "Mhzaly")
         root.put("exportedAt", System.currentTimeMillis())
         root.put("uin", appContext?.let { SessionStore.uin(it) } ?: "")
         root.put("chats", chatsArr)

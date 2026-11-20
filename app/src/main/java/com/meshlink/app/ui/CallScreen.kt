@@ -77,7 +77,7 @@ fun CallScreen(state: CallUiState) {
     val elapsed = if (state.connectedAt > 0) ((now - state.connectedAt) / 1000L).toInt() else 0
     val status = when (state.phase) {
         CallPhase.DIALING -> state.note.ifBlank { "Ringing…" }
-        CallPhase.RINGING -> state.note.ifBlank { "Incoming MeshLink call" }
+        CallPhase.RINGING -> state.note.ifBlank { "Incoming Mhzaly call" }
         CallPhase.CONNECTING -> state.note.ifBlank { "Connecting…" }
         CallPhase.ACTIVE -> formatDuration(elapsed)
         CallPhase.ENDED -> state.note.ifBlank { "Call ended" }

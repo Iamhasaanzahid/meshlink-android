@@ -1,5 +1,7 @@
 package com.meshlink.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -106,7 +109,7 @@ fun SettingsScreen(
     val qrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         val request = QrLink.parse(result.contents.orEmpty())
         if (request == null) {
-            Toast.makeText(context, "Not a MeshLink pairing QR", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Not a Mhzaly pairing QR", Toast.LENGTH_SHORT).show()
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -199,7 +202,7 @@ fun SettingsScreen(
                     Spacer(Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            displayName.ifBlank { "MeshLink user" },
+                            displayName.ifBlank { "Mhzaly user" },
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 19.sp,
                             color = Color.White,
@@ -347,7 +350,7 @@ fun SettingsScreen(
                 ) {
                     Text(
                         "Shared with people you chat with, so they can reach you by SMS " +
-                            "when no MeshLink phone is in between. Leave empty to share nothing.",
+                            "when no Mhzaly phone is in between. Leave empty to share nothing.",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
@@ -376,7 +379,7 @@ fun SettingsScreen(
                             fontSize = 14.sp,
                         )
                         Text(
-                            if (smsFallback) "On · uses your SIM when no MeshLink phone is near"
+                            if (smsFallback) "On · uses your SIM when no Mhzaly phone is near"
                             else "Off · free radio mesh only",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -387,7 +390,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Android warns that SMS can cost money — that is your operator's " +
-                        "normal SMS rate, not a MeshLink charge. It is off by default " +
+                        "normal SMS rate, not a Mhzaly charge. It is off by default " +
                         "and automatic retries never send SMS. Bluetooth, Wi-Fi Direct " +
                         "and Wi-Fi LAN are always free.",
                     fontSize = 11.sp,
@@ -474,10 +477,10 @@ fun SettingsScreen(
                     steps = MeshSettings.MAX_HOPS - MeshSettings.MIN_HOPS - 1,
                 )
                 Text(
-                    "How many MeshLink phones a message may pass through. Every extra " +
+                    "How many Mhzaly phones a message may pass through. Every extra " +
                         "hop adds reach, but delivery is slower because each phone has to " +
                         "receive and re-broadcast the frame. Relaying only works when other " +
-                        "MeshLink phones are actually in between.",
+                        "Mhzaly phones are actually in between.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -643,7 +646,7 @@ fun SettingsScreen(
                 Text("Link web", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Scan the QR shown on meshlink web to sign in with this MeshLink ID. The code expires every 30 seconds.",
+                    "Scan the QR shown on Mhzaly web to sign in with this Mhzaly ID. The code expires every 30 seconds.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -652,7 +655,7 @@ fun SettingsScreen(
                     onClick = {
                         val options = ScanOptions()
                             .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                            .setPrompt("Scan the MeshLink web QR code")
+                            .setPrompt("Scan the Mhzaly web QR code")
                             .setBeepEnabled(false)
                         qrScanner.launch(options)
                     },
@@ -718,7 +721,8 @@ fun SettingsScreen(
                 Text("Current version: ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Medium, fontSize = 14.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Check GitHub releases for a newer MeshLink APK and install it in place.",
+                    "Checks GitHub for a newer Mhzaly APK and updates it in place. " +
+                        "You can also open the release in your browser.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -727,43 +731,22 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             scope.launch {
-                                updateChecking = true
                                 updateError = null
-                                updateInfo = null
-                                val info = AppUpdater.check()
-                                updateChecking = false
-                                if (info == null) {
-                                    updateError = "Could not reach the update server."
-                                } else if (AppUpdater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
-                                    updateInfo = info
-                                } else {
-                                    updateError = "You are up to date (${BuildConfig.VERSION_NAME})."
+                                val info = updateInfo ?: run {
+                                    updateChecking = true
+                                    val found = AppUpdater.check()
+                                    updateChecking = false
+                                    if (found == null) {
+                                        updateError = "Could not reach the update server."
+                                        return@launch
+                                    }
+                                    if (!AppUpdater.isNewer(BuildConfig.VERSION_NAME, found.version)) {
+                                        updateError = "You are up to date (${BuildConfig.VERSION_NAME})."
+                                        return@launch
+                                    }
+                                    updateInfo = found
+                                    found
                                 }
-                            }
-                        },
-                        enabled = !updateChecking && !updateDownloading,
-                        shape = RoundedCornerShape(10.dp),
-                    ) { Text(if (updateChecking) "Checking…" else "Check for updates") }
-                    if (updateChecking) {
-                        Spacer(Modifier.width(10.dp))
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    }
-                }
-                updateInfo?.let { info ->
-                    Spacer(Modifier.height(10.dp))
-                    Text("New version: ${info.version}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    if (info.notes.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            info.notes.take(400),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            scope.launch {
                                 updateDownloading = true
                                 updateProgress = 0f
                                 val file = AppUpdater.download(context, info.apkUrl) { p ->
@@ -775,15 +758,54 @@ fun SettingsScreen(
                                 } else if (AppUpdater.canInstall(context)) {
                                     AppUpdater.install(context, file)
                                 } else {
-                                    updateError = "Allow MeshLink to install apps in Android settings."
+                                    updateError = "Allow Mhzaly to install apps in Android settings."
                                 }
+                            }
+                        },
+                        enabled = !updateChecking && !updateDownloading,
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text(
+                            when {
+                                updateChecking -> "Checking…"
+                                updateDownloading -> "Updating…"
+                                else -> "Update"
+                            },
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val url = updateInfo?.apkUrl ?: AppUpdater.RELEASES_URL
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }.onFailure {
+                                Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
                             }
                         },
                         enabled = !updateDownloading,
                         shape = RoundedCornerShape(10.dp),
-                    ) { Text(if (updateDownloading) "Downloading…" else "Download & install") }
+                    ) { Text("Open in browser") }
+                    if (updateChecking) {
+                        Spacer(Modifier.width(8.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                }
+                updateInfo?.let { info ->
+                    Spacer(Modifier.height(10.dp))
+                    Text("New version: ${info.version}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    if (info.notes.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            info.notes.take(400),
+                            fontSize = 11.sp,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     if (updateDownloading) {
-                        Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(
                             progress = { updateProgress },
                             modifier = Modifier.fillMaxWidth(),
@@ -800,7 +822,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(18.dp))
         SectionTitle("About")
         Text(
-            "MeshLink ${BuildConfig.VERSION_NAME} · free software (GPL-3.0-or-later)\n" +
+            "Mhzaly ${BuildConfig.VERSION_NAME} · free software (GPL-3.0-or-later)\n" +
                 "Messages and calls use the phone's own radios — Wi-Fi Direct, " +
                 "Wi-Fi LAN, Bluetooth LE and SMS. No account and no tracking. " +
                 "Online mode is optional, off by default, and only used when " +
@@ -838,7 +860,7 @@ fun SettingsScreen(
                             "claimed" -> "Browser found. Tap Approve to finish linking."
                             "approved" -> "Web linked successfully. You can close this."
                             "expired" -> "Code expired. Show a new code and try again."
-                            else -> "Open meshlink web → Use pairing code, and type this code."
+                            else -> "Open Mhzaly web → Use pairing code, and type this code."
                         },
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -36,7 +36,7 @@ import java.security.SecureRandom
  */
 object RadioTransport {
 
-    private const val TAG = "MeshLinkRadio"
+    private const val TAG = "MhzalyRadio"
     private const val PREFIX = "ML1"
     private const val SMS_MAX_CHARS = 130
     private const val REASSEMBLY_TIMEOUT_MS = 5 * 60 * 1000L

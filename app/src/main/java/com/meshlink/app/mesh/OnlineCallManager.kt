@@ -79,7 +79,7 @@ import java.util.UUID
  */
 object OnlineCallManager {
 
-    private const val TAG = "MeshLinkOnline"
+    private const val TAG = "MhzalyOnline"
     private const val CALL_CHANNEL_ID = "meshlink_online_calls"
     private const val CALL_NOTIFICATION_ID = 1009
 
@@ -377,7 +377,7 @@ object OnlineCallManager {
         val pick = names.firstOrNull { runCatching { enumerator.isFrontFacing(it) }.getOrDefault(false) }
             ?: names.first()
         val capturer = runCatching { enumerator.createCapturer(pick, null) }.getOrNull() ?: return null
-        val helper = SurfaceTextureHelper.create("MeshLinkCapture", egl.eglBaseContext)
+        val helper = SurfaceTextureHelper.create("MhzalyCapture", egl.eglBaseContext)
         val source = f.createVideoSource(capturer.isScreencast)
         capturer.initialize(helper, ctx, source.capturerObserver)
         runCatching { capturer.startCapture(640, 480, 24) }
@@ -435,7 +435,7 @@ object OnlineCallManager {
             return
         }
         val pc = peerConnection ?: run { fail("Start a call first"); return }
-        val parsed = parseCode(code) ?: run { fail("That is not a MeshLink answer code"); return }
+        val parsed = parseCode(code) ?: run { fail("That is not a Mhzaly answer code"); return }
         if (parsed.type != SessionDescription.Type.ANSWER) {
             fail("This is an offer code. Paste the answer code the other person sent back.")
             return
@@ -461,7 +461,7 @@ object OnlineCallManager {
             return
         }
         reset(keepAudio = false)
-        val parsed = parseCode(code) ?: run { fail("That is not a MeshLink call code"); return }
+        val parsed = parseCode(code) ?: run { fail("That is not a Mhzaly call code"); return }
         if (parsed.type != SessionDescription.Type.OFFER) {
             fail("This is an answer code. Ask the caller for their call code.")
             return
@@ -791,7 +791,7 @@ object OnlineCallManager {
                             CALL_CHANNEL_ID,
                             "Online calls",
                             NotificationManager.IMPORTANCE_HIGH,
-                        ).apply { description = "Incoming MeshLink internet calls" }
+                        ).apply { description = "Incoming Mhzaly internet calls" }
                     )
                 }
             }
@@ -806,7 +806,7 @@ object OnlineCallManager {
             )
             val notification = NotificationCompat.Builder(ctx, CALL_CHANNEL_ID)
                 .setSmallIcon(ctx.applicationInfo.icon)
-                .setContentTitle(if (video) "Incoming video call" else "Incoming MeshLink call")
+                .setContentTitle(if (video) "Incoming video call" else "Incoming Mhzaly call")
                 .setContentText(name.ifBlank { peer })
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

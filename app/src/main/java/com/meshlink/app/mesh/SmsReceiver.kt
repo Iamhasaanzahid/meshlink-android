@@ -34,11 +34,11 @@ class SmsReceiver : BroadcastReceiver() {
         }
         if (from.isNotEmpty()) {
             val meshSms = RadioTransport.onSmsReceived(from, body.toString())
-            Log.i(TAG, "SMS from $from: ${if (meshSms) "MeshLink frame" else "ignored"}")
+            Log.i(TAG, "SMS from $from: ${if (meshSms) "Mhzaly frame" else "ignored"}")
         }
     }
 
     companion object {
-        private const val TAG = "MeshLinkSms"
+        private const val TAG = "MhzalySms"
     }
 }

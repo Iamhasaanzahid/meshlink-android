@@ -70,7 +70,7 @@ fun AiScreen(onBack: () -> Unit) {
         mutableStateListOf(
             AiMessage(
                 "assistant",
-                "Salam! Main MeshLink AI hoon — aapka private daily assistant. Aam baat karo, kuch bhi poocho: khaana, plan, mood, padhai, kaam, jokes… main yahan hoon. 💜",
+                "Salam! Main Mhzaly AI hoon — aapka private daily assistant. Aam baat karo, kuch bhi poocho: khaana, plan, mood, padhai, kaam, jokes… main yahan hoon. 💜",
             ),
         )
     }
@@ -126,7 +126,7 @@ fun AiScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(4.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "MeshLink AI",
+                            "Mhzaly AI",
                             color = Color.White,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
@@ -209,7 +209,7 @@ fun AiScreen(onBack: () -> Unit) {
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    placeholder = { Text("Message MeshLink AI…") },
+                    placeholder = { Text("Message Mhzaly AI…") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
                     shape = RoundedCornerShape(18.dp),
@@ -263,7 +263,7 @@ private fun ChatBubble(message: AiMessage) {
     ) {
         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
             Text(
-                if (mine) "You" else "MeshLink AI",
+                if (mine) "You" else "Mhzaly AI",
                 fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -357,7 +357,7 @@ private suspend fun chatWithEngine(
                 .put("role", "system")
                 .put(
                     "content",
-                    "You are a friendly companion inside MeshLink. Chat in natural Roman Urdu, Hinglish or English, matching the user's language and mood. Answer like a real friend in one to three short sentences: notice how they feel, reply warmly, then ask one simple follow-up. Talk about daily life, food, plans, study, work, family, love, jokes and small talk. Never say you are an AI, a model or an assistant; never mention servers, setup, Ollama or technical configuration. No robotic refusals, no long monologues.",
+                    "You are a friendly companion inside Mhzaly. Chat in natural Roman Urdu, Hinglish or English, matching the user's language and mood. Answer like a real friend in one to three short sentences: notice how they feel, reply warmly, then ask one simple follow-up. Talk about daily life, food, plans, study, work, family, love, jokes and small talk. Never say you are an AI, a model or an assistant; never mention servers, setup, Ollama or technical configuration. No robotic refusals, no long monologues.",
                 ),
         )
         history.forEach { message ->
@@ -486,13 +486,13 @@ private fun detectChatIntent(text: String): ChatIntent {
         has(t, "\\b(weather|mousam|barish|garmi|sardi|rain)\\b") -> ChatIntent.WEATHER
         has(t, "\\b(diet|exercise|walk|gym|weight)\\b") -> ChatIntent.HEALTH
         has(t, "\\b(time|kitne baje|clock)\\b") -> ChatIntent.TIME
-        has(t, "\\b(summar\\w*|recap|overview|chat history|old chats|meshlink chats)\\b") -> ChatIntent.APP_CHAT
+        has(t, "\\b(summar\\w*|recap|overview|chat history|old chats|pak link chats)\\b") -> ChatIntent.APP_CHAT
         has(t, "\\b(group\\w*|community|broadcast)\\b") -> ChatIntent.APP_GROUP
         has(t, "\\b(call\\w*|voice|video|ptt|walkie)\\b") -> ChatIntent.APP_CALL
         has(t, "\\b(offline|mesh|hotspot|lan|relay|radio)\\b") -> ChatIntent.APP_MESH
         has(t, "\\b(vault|pin|encrypt\\w*|secur\\w*|password|privacy|hack\\w*)\\b") -> ChatIntent.APP_VAULT
         has(t, "\\b(qr|link|web|device|login)\\b") -> ChatIntent.APP_LINK
-        has(t, "\\b(identity|email|meshlink id|phone number)\\b") -> ChatIntent.APP_IDENTITY
+        has(t, "\\b(identity|email|pak link id|phone number)\\b") -> ChatIntent.APP_IDENTITY
         has(t, "\\b(reply|draft|write|compose)\\b") -> ChatIntent.APP_REPLY
         has(t, "\\b(ollama|model|engine|intelligence|server|api)\\b") -> ChatIntent.AI_ENGINE
         else -> ChatIntent.UNKNOWN
@@ -552,7 +552,7 @@ private fun replyFor(intent: ChatIntent, text: String, history: List<AiMessage>)
             ),
         )
         ChatIntent.IDENTITY, ChatIntent.AI_ENGINE ->
-            "Main MeshLink ka private daily assistant hoon — aapki aam baat ka saathi. Khaana, mood, plan, jokes… kuch bhi poocho 💜"
+            "Main Mhzaly ka private daily assistant hoon — aapki aam baat ka saathi. Khaana, mood, plan, jokes… kuch bhi poocho 💜"
         ChatIntent.TIRED -> variant(
             listOf(
                 "Arre, thaka hua lag rahe ho 😔 Paani pi lo aur 10 minute aankhein band kar lo. Aaj ka kaam thoda kam bhi chalega.",
@@ -678,19 +678,19 @@ private fun replyFor(intent: ChatIntent, text: String, history: List<AiMessage>)
         ChatIntent.TIME ->
             "Mere paas aapki local clock access nahi hai, phone ki clock dekh lijiye ⏰ Chahein to time management me madad kar sakta hoon."
         ChatIntent.APP_CHAT ->
-            "MeshLink chats phone par encrypted vault me rehti hain. Chats tab se conversations dekh sakte ho — cloud par upload nahi hota. Main reply draft karne me bhi madad kar sakta hoon."
+            "Mhzaly chats phone par encrypted vault me rehti hain. Chats tab se conversations dekh sakte ho — cloud par upload nahi hota. Main reply draft karne me bhi madad kar sakta hoon."
         ChatIntent.APP_GROUP ->
-            "Groups device par hote hain aur mesh ke through tab sync hote hain jab peers paas ho. MeshLink ID se log add karo; internet na ho to bhi messages aage badhte hain."
+            "Groups device par hote hain aur mesh ke through tab sync hote hain jab peers paas ho. Mhzaly ID se log add karo; internet na ho to bhi messages aage badhte hain."
         ChatIntent.APP_CALL ->
             "Calls ke 3 layer hain: online encrypted WebRTC audio/video, local Wi-Fi Direct/mesh P2P with push-to-talk, aur offline voice-note jo baad me sync hota hai."
         ChatIntent.APP_MESH ->
-            "MeshLink ke 3 layer hain: internet par online relay, internet na ho to local hotspot/LAN mesh (Bluetooth LE, Wi-Fi Direct, SMS), aur store-and-forward."
+            "Mhzaly ke 3 layer hain: internet par online relay, internet na ho to local hotspot/LAN mesh (Bluetooth LE, Wi-Fi Direct, SMS), aur store-and-forward."
         ChatIntent.APP_VAULT ->
             "Vault AES-256-GCM aur PBKDF2-SHA256 use karta hai. 6-digit app PIN doosra layer hai aur 5 minute baad auto-lock hota hai."
         ChatIntent.APP_LINK ->
             "QR linking: Settings → Link device, website ka QR scan karo, phir yahan approve karo. Session short-lived hota hai aur messages share nahi hote."
         ChatIntent.APP_IDENTITY ->
-            "MeshLink ID isi device par banti hai aur kabhi nahi badalti. Verified email security check hai, pehchaan nahi — chat me kabhi nahi dikhti."
+            "Mhzaly ID isi device par banti hai aur kabhi nahi badalti. Verified email security check hai, pehchaan nahi — chat me kabhi nahi dikhti."
         ChatIntent.APP_REPLY ->
             "Try karo: \"Bhai, message mil gaya — main 10 minute me reply karta hoon.\" Short, clear aur warm. Formal ya casual chahiye?"
         ChatIntent.UNKNOWN -> fallbackReply(topic, history)

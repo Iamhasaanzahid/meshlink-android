@@ -30,10 +30,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -74,8 +76,8 @@ fun initials(name: String): String {
     }
 }
 
-/** The MeshLink monogram: three peers joined in a violet mesh. Drawn entirely
- * with Compose primitives so no assets or fonts are needed. */
+/** Mhzaly mark: a chat bubble carrying a bold "M" and a small spark.
+ * Drawn with Compose primitives so it stays crisp at every size. */
 @Composable
 fun MeshMark(size: Dp = 40.dp) {
     val radius = size * 0.30f
@@ -89,35 +91,63 @@ fun MeshMark(size: Dp = 40.dp) {
                 spotColor = BrandDeep.copy(alpha = 0.45f),
             )
             .clip(RoundedCornerShape(radius))
-            .background(Brush.linearGradient(listOf(Color(0xFFA78BFA), BrandDeep)))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFFA78BFA), BrandViolet, BrandDeep),
+                ),
+            )
             .border(
-                1.dp, Color.White.copy(alpha = 0.30f), RoundedCornerShape(radius),
+                1.dp, Color.White.copy(alpha = 0.32f), RoundedCornerShape(radius),
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(size * 0.58f)) {
-            val s = size.toPx() * 0.58f
-            val r = s * 0.095f
-            val stroke = s * 0.055f
-            val nodes = listOf(
-                Offset(s * 0.24f, s * 0.26f),
-                Offset(s * 0.76f, s * 0.26f),
-                Offset(s * 0.50f, s * 0.76f),
+        Canvas(modifier = Modifier.size(size * 0.62f)) {
+            val s = size.toPx() * 0.62f
+            val bubbleTop = s * 0.17f
+            val bubbleH = s * 0.60f
+
+            // White speech bubble with a soft tail.
+            drawRoundRect(
+                color = Color.White,
+                topLeft = Offset(s * 0.11f, bubbleTop),
+                size = Size(s * 0.78f, bubbleH),
+                cornerRadius = CornerRadius(s * 0.20f),
             )
-            for (i in nodes.indices) {
-                for (j in i + 1 until nodes.size) {
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.9f),
-                        start = nodes[i],
-                        end = nodes[j],
-                        strokeWidth = stroke,
-                        cap = StrokeCap.Round,
-                    )
-                }
+            val tail = Path().apply {
+                moveTo(s * 0.27f, bubbleTop + bubbleH - s * 0.03f)
+                lineTo(s * 0.19f, bubbleTop + bubbleH + s * 0.17f)
+                lineTo(s * 0.44f, bubbleTop + bubbleH - s * 0.03f)
+                close()
             }
-            nodes.forEach {
-                drawCircle(color = Color.White, radius = r, center = it)
+            drawPath(tail, Color.White)
+
+            // The "T" for Mhzaly, in the brand violet.
+            drawRoundRect(
+                color = Color(0xFF5B21B6),
+                topLeft = Offset(s * 0.27f, s * 0.30f),
+                size = Size(s * 0.46f, s * 0.10f),
+                cornerRadius = CornerRadius(s * 0.05f),
+            )
+            drawRoundRect(
+                color = Color(0xFF5B21B6),
+                topLeft = Offset(s * 0.44f, s * 0.38f),
+                size = Size(s * 0.11f, s * 0.28f),
+                cornerRadius = CornerRadius(s * 0.055f),
+            )
+
+            // Small mint spark: a distinctive accent on the dark violet tile.
+            val star = Path().apply {
+                moveTo(s * 0.79f, s * 0.12f)
+                lineTo(s * 0.82f, s * 0.20f)
+                lineTo(s * 0.90f, s * 0.23f)
+                lineTo(s * 0.82f, s * 0.26f)
+                lineTo(s * 0.79f, s * 0.34f)
+                lineTo(s * 0.76f, s * 0.26f)
+                lineTo(s * 0.68f, s * 0.23f)
+                lineTo(s * 0.76f, s * 0.20f)
+                close()
             }
+            drawPath(star, Color(0xFF6EE7B7))
         }
     }
 }
@@ -313,7 +343,7 @@ fun NewChatDialog(
         text = {
             Column {
                 Text(
-                    "Enter your friend's MeshLink ID (UIN) or phone number. " +
+                    "Enter your friend's Mhzaly ID (UIN) or phone number. " +
                         "No internet needed.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
