@@ -146,18 +146,31 @@ fun OnlineCallScreen(onClose: () -> Unit) {
     fun acceptCall() = withCamera { withMic { OnlineCallManager.acceptRelayed() } }
 
     fun close() {
-        OnlineCallManager.reset()
+        // Closing the UI must not leave the other phone ringing forever.
+        if (ui.relayed && ui.phase == Phase.RINGING) {
+            OnlineCallManager.declineRelayed()
+        } else if (ui.relayed && ui.phase in setOf(
+                Phase.DIALING, Phase.CONNECTING, Phase.CONNECTED,
+            )
+        ) {
+            OnlineCallManager.hangup()
+        } else {
+            OnlineCallManager.reset()
+        }
         onClose()
     }
 
     var joinCode by remember { mutableStateOf("") }
     var answerCode by remember { mutableStateOf("") }
+    // If WebRTC (and its EGL context) could not start, show the voice UI rather
+    // than crashing while creating video renderer views.
+    val videoUi = ui.video && OnlineCallManager.eglContext() != null
 
     Dialog(
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        if (ui.video && (ui.phase == Phase.DIALING || ui.phase == Phase.RINGING ||
+        if (videoUi && (ui.phase == Phase.DIALING || ui.phase == Phase.RINGING ||
                 ui.phase == Phase.CONNECTING || ui.phase == Phase.CONNECTED)
         ) {
             VideoCallUi(
@@ -194,6 +207,18 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                     }
                     IconButton(onClick = { close() }) {
                         Icon(Icons.Filled.Close, contentDescription = "Close")
+                    }
+                }
+
+                if (!micGranted && ui.phase != Phase.IDLE && ui.phase != Phase.ENDED) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Microphone access is off. Calls need it for voice.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    TextButton(onClick = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
+                        Text("Grant microphone")
                     }
                 }
 

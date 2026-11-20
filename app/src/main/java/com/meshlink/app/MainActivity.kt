@@ -108,6 +108,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         com.meshlink.app.service.AppForeground.active = true
+        // If the service was killed while offline, this is the fastest way to
+        // deliver anything still sitting in the local outbox.
+        if (SessionStore.uin(this) != null) ChatRepository.retryPending()
     }
 
     override fun onPause() {

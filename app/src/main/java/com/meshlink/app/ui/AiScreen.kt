@@ -45,7 +45,7 @@ private const val DEFAULT_BASE_URL = "http://192.168.1.50:11434"
 private const val DEFAULT_MODEL = "llama3.2"
 
 private val AI_PROMPTS = listOf(
-    "Aaj kya khaya?",
+    "Khaana suggest karo",
     "Dinner ka idea do",
     "Mujhe thaka laga raha hai",
     "Plan banata hai",
@@ -343,7 +343,12 @@ private suspend fun chatWithEngine(
     history: List<AiMessage>,
     prompt: String,
 ): String = withContext(Dispatchers.IO) {
-    if (!probeEngine()) return@withContext localReply(prompt)
+    // Everyday chat is answered by the built-in layer straight away. This keeps
+    // replies natural and instant when the private engine is missing or slow.
+    val builtIn = builtInReply(history, prompt)
+    if (builtIn.confident) return@withContext builtIn.text
+    if (!probeEngine()) return@withContext builtIn.text
+
     var connection: HttpURLConnection? = null
     try {
         val messages = JSONArray()
@@ -352,7 +357,7 @@ private suspend fun chatWithEngine(
                 .put("role", "system")
                 .put(
                     "content",
-                    "You are MeshLink AI, a friendly private everyday assistant for normal conversation. Talk naturally about daily life, food, plans, mood, study, work, health and small talk. Be warm, concise and emotionally aware. Match the user's language (Roman Urdu, English or Hinglish). Detect feelings and answer with empathy. Never mention model names, servers, setup or technical configuration.",
+                    "You are a friendly companion inside MeshLink. Chat in natural Roman Urdu, Hinglish or English, matching the user's language and mood. Answer like a real friend in one to three short sentences: notice how they feel, reply warmly, then ask one simple follow-up. Talk about daily life, food, plans, study, work, family, love, jokes and small talk. Never say you are an AI, a model or an assistant; never mention servers, setup, Ollama or technical configuration. No robotic refusals, no long monologues.",
                 ),
         )
         history.forEach { message ->
@@ -370,8 +375,8 @@ private suspend fun chatWithEngine(
 
         connection = URL(DEFAULT_BASE_URL.trimEnd('/') + "/api/chat").openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 6_000
-        connection.readTimeout = 25_000
+        connection.connectTimeout = 1_500
+        connection.readTimeout = 8_000
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         connection.setRequestProperty("Accept", "application/json")
         connection.doOutput = true
@@ -381,122 +386,417 @@ private suspend fun chatWithEngine(
 
         val code = connection.responseCode
         val body = connection.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) return@withContext localReply(prompt)
+        if (code !in 200..299) return@withContext builtIn.text
         val json = JSONObject(body)
         val content = (json.optJSONObject("message")?.optString("content", "").orEmpty())
             .ifBlank { json.optString("response", "") }
-        return@withContext content.trim().ifBlank { localReply(prompt) }
+        val clean = cleanEngineReply(content)
+        // A repeated or mechanical answer is worse than a natural built-in one.
+        if (clean == null || history.any { it.text == clean }) return@withContext builtIn.text
+        return@withContext clean
     } catch (e: IOException) {
-        return@withContext localReply(prompt)
+        return@withContext builtIn.text
     } catch (e: Exception) {
-        return@withContext localReply(prompt)
+        return@withContext builtIn.text
     } finally {
         connection?.disconnect()
     }
 }
 
-/** Built-in everyday answers — works instantly, even with no internet. */
-private fun localReply(question: String): String {
-    val low = question.trim().lowercase()
-    val base = when {
-        Regex("^(hi|hello|salam|assalam|yo)\\b").containsMatchIn(low) ->
-            "Salam! 😊 Aaj kaise ho? Khaana, plan, mood ya koi bhi baat — main yahan hoon."
+/**
+ * Built-in responder result. [confident] intents (all everyday chat) skip the
+ * local engine completely, so answers stay natural even when it is slow/absent.
+ */
+private data class BuiltInReply(val text: String, val confident: Boolean)
 
-        Regex("how are you|kaise ho|kya haal|what.?s up|kya chal raha").containsMatchIn(low) ->
-            "Main theek hoon, shukriya! 😊 Aap kaise ho? Aaj kya kar rahe ho?"
+private enum class ChatIntent {
+    GREETING, HOW_ARE_YOU, THANKS, SHORT_ACK, IDENTITY,
+    TIRED, BORED, HAPPY, SAD, ANGRY, ANXIOUS, SICK,
+    FOOD, PLAN, WORK, STUDY, FAMILY, LOVE, JOKE,
+    WEATHER, HEALTH, TIME,
+    APP_CHAT, APP_GROUP, APP_CALL, APP_MESH, APP_VAULT, APP_LINK,
+    APP_IDENTITY, APP_REPLY, AI_ENGINE, UNKNOWN,
+}
 
-        Regex("thank|shukriya|dhanyavaad").containsMatchIn(low) ->
-            "Koi baat nahi! 😊 Khush raho. Aur kya madad chahiye?"
+private fun normalizeChat(text: String): String =
+    text.trim().lowercase().replace(Regex("\\s+"), " ")
 
-        Regex("who are you|kaun ho|tum kaun|your name").containsMatchIn(low) ->
-            "Main MeshLink AI hoon — aapka private daily assistant. Kisi bhi aam baat ke liye yahan hoon. 💜"
+private fun has(text: String, vararg patterns: String): Boolean =
+    patterns.any { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(text) }
 
-        Regex("aaj.*khaya|today.*ate|maine.*khaya|kya khaya|kha liya|kha gaya").containsMatchIn(low) ->
-            "Accha! Aapne aaj kya khaya? 😊 Bata dijiye to main mood aur energy ke hisaab se kuch suggestion bhi de sakta hoon."
+/** Longest names first so "dal chawal" is not reduced to "dal". */
+private val KNOWN_FOODS = listOf(
+    "dal chawal", "biryani", "omelette", "paratha", "sandwich", "noodles",
+    "samosa", "pizza", "coffee", "paneer", "halwa", "burger", "momo",
+    "khichdi", "bread", "chai", "dahi", "eggs", "andaa", "rice", "dal",
+)
 
-        Regex("khana|khaana|food|lunch|dinner|breakfast|naashta|recipe|bhukha|bhookh|eat|swad").containsMatchIn(low) ->
-            "Khaana sabse important 😊. Agar kuch light chahiye to dal-chawal, khichdi ya omelette try karo. Thoda dahi/salad bhi add kar lo. Aapko aaj kya khane ka mann hai?"
+private fun mentionedFood(text: String): String? = KNOWN_FOODS.firstOrNull { it in text }
 
-        Regex("thaka|thak gaya|tired|exhaust|neend|sleep|rest|borg").containsMatchIn(low) ->
-            "Thakan lagna bilkul normal hai. Thoda paani piyo, aankhon ko 10 minute aaram do, aur agar ho jaye to 20-minute ki chhoti neend. Aaj ka kaam thoda kam kar ke bhi chalega. 💜"
+/** Tiny backchannels such as "hmm", "ok", "thoda sa" never trigger topic rules. */
+private fun isShortAck(text: String): Boolean {
+    val compact = text.replace(Regex("[^a-z0-9 ]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    if (compact.length > 16) return false
+    return Regex(
+        "^(hmm*|hm+|ok+|okay|k|theek|thik|achha|accha|haan|han|nahi|no|yep|ya|yaar|cool|nice|sure|fine|good|thoda|thoda sa|kuch nahi|bas|aur)$",
+        RegexOption.IGNORE_CASE,
+    ).matches(compact)
+}
 
-        Regex("plan|schedule|today|kal|tomorrow|routine|kaam|work|office|meeting|padhai|study|exam").containsMatchIn(low) ->
-            "Chalo ek simple plan banate hain: 1) sabse zaroori kaam pehle, 2) 25-minute focus aur 5-minute break, 3) thoda walk aur paani, 4) shaam me 10-minute review. Aapka aaj ka sabse bada kaam kya hai?"
-
-        Regex("joke|mazaak|funny|hasana|laugh|chutkala").containsMatchIn(low) ->
-            "Ek chhota sa: maine fridge khola to andar se bill mila — 'Electricity department: payment pending.' 😄 Aur kya sunaoon?"
-
-        Regex("weather|mousam|barish|garmi|sardi|rain").containsMatchIn(low) ->
-            "Mere paas live weather data nahi hai, lekin aap phone ke weather app se check kar sakte ho. Agar barish ya garmi ho to paani aur suitable kapde saath rakhna. 🌦️"
-
-        Regex("health|sehat|diet|exercise|walk|gym|weight|dawa|medicine|fever|bukhar|dard").containsMatchIn(low) ->
-            "Sehat pehle. Paani, neend aur thoda movement sabse zyada farak dete hain. Agar fever ya dard ho to doctor se consult karna better. Main general tips de sakta hoon, medical diagnosis nahi. 💜"
-
-        Regex("family|ghar|mom|dad|friend|dost|saath|relationship").containsMatchIn(low) ->
-            "Aapke log sabse important hote hain. Unke saath thoda time, ek chhoti message ya shukriya bhi din bana deta hai. Aap kis ke baare me soch rahe ho?"
-
-        Regex("love|pyaar|crush|breakup|girlfriend|boyfriend").containsMatchIn(low) ->
-            "Pyaar me sab kuch natural hai — kabhi khushi, kabhi confusion. Honest baat karo, boundaries respect karo, aur apne feelings ko ignore mat karo. Aap kya feel kar rahe ho? 💜"
-
-        Regex("seekh|learn|skill|course|knowledge|samjho|seekhna").containsMatchIn(low) ->
-            "Aaj kuch chhota seekhne ka best tareeka: 20 minute theory, 20 minute practice, phir apne words me summarize. Consistency badi cheez se zyada important hai. Kya seekhna chahte ho?"
-
-        Regex("kya karun|what should i|suggest|help|decision|confuse|soch").containsMatchIn(low) ->
-            "Pehle deep saans lo. Do options likho, har ek ka ek plus aur ek minus, aur jo aapke aage ke liye sahi lage wo chuno. Aap mujhe thoda context de dijiye to main aur clear madad kar sakta hoon."
-
-        Regex("summar|recap|overview|chats?|messages?").containsMatchIn(low) ->
-            "MeshLink chats aapke phone par encrypted vault me rehti hain. Chats tab se conversations dekh sakte ho — kuch bhi cloud par upload nahi hota. Main reply draft karne me bhi madad kar sakta hoon."
-
-        Regex("group|community|broadcast").containsMatchIn(low) ->
-            "Groups aapke device par hote hain aur mesh ke through tab sync hote hain jab peers paas ho. MeshLink ID se log add karo; internet na ho to bhi messages hop-by-hop aage badhte hain."
-
-        Regex("call|voice|video|ptt|walkie").containsMatchIn(low) ->
-            "Calls ke 3 layer hain: online par encrypted WebRTC audio/video, local Wi-Fi Direct / mesh P2P with push-to-talk, aur offline voice-note jo baad me sync ho jata hai."
-
-        Regex("offline|mesh|hotspot|lan|relay|radio").containsMatchIn(low) ->
-            "MeshLink ke 3 layer hain: 1) internet par online relay, 2) internet na ho to local hotspot/LAN mesh (Bluetooth LE, Wi-Fi Direct, SMS), 3) store-and-forward jo connectivity wapas aate hi messages bhej deta hai."
-
-        Regex("(^| )ai( |$)|model|engine|intelligence|ollama").containsMatchIn(low) ->
-            "Main MeshLink AI hoon — aapka private assistant. Aam baat karo ya koi app feature samjho; koi setup ya server dikhane ki zarurat nahi. 💜"
-
-        Regex("vault|pin|encrypt|secur|password|privacy|hack").containsMatchIn(low) ->
-            "Vault AES-256-GCM aur PBKDF2-SHA256 use karta hai. 6-digit app PIN doosra layer hai aur 5 minute baad auto-lock ho jata hai. Email sirf verification hai; pehchaan MeshLink ID hi hai."
-
-        Regex("qr|link|web|device|login").containsMatchIn(low) ->
-            "QR linking phone ko MeshLink Web se pairs karta hai: Settings → Link device, website ka QR scan karo, phir yahan approve karo. Session short-lived hota hai aur messages share nahi hote."
-
-        Regex("identity|email|(^| )id( |$)|number").containsMatchIn(low) ->
-            "MeshLink ID isi device par banti hai aur kabhi nahi badalti. Verified email sirf security check hai — ye aapki pehchaan nahi hai aur chat me kabhi nahi dikhti."
-
-        Regex("reply|draft|write|compose").containsMatchIn(low) ->
-            "Try karo: \"Bhai, message mil gaya — main 10 minute me reply karta hoon.\" Short, clear aur warm. Aur formal ya casual chahiye?"
-
-        Regex("time|kitne baje|clock").containsMatchIn(low) ->
-            "Mere paas aapki local clock access nahi hai, lekin phone ki clock dekh lijiye. Chahein to main time management me madad kar sakta hoon. ⏰"
-
-        else ->
-            "Main yahan hoon 💜. Aam baat karo — khaana, plan, mood, padhai, kaam, jokes ya koi bhi confusion. English, Roman Urdu ya Hinglish, jo aapko aasan lage."
-    }
-    val emotion = detectEmotion(question)
-    return when (emotion) {
-        "tired" -> "Thoda aaram kar lo — aapki thakan samajh sakti hoon. 💜 " + base
-        "sad" -> "I'm sorry you're feeling low right now. 💜 " + base
-        "angry" -> "I understand the frustration. Let's handle it step by step. 💜 " + base
-        "anxious" -> "Take a breath — we'll sort this out together. 💜 " + base
-        "happy" -> "Love that energy! 😊 " + base
-        else -> base
+/** Ordered intent matcher: feeling first, then topic, then app help. */
+private fun detectChatIntent(text: String): ChatIntent {
+    val t = normalizeChat(text)
+    return when {
+        isShortAck(t) -> ChatIntent.SHORT_ACK
+        has(t, "\\b(hi+|hey|hello|hy|yo|salam|assalam|alaikum|aoa|good morning|gm|good night)\\b") -> ChatIntent.GREETING
+        has(
+            t,
+            "\\b(how are you|kaise ho|koise ho|theek ho|kia haal|kya haal|haal kya|kya chal raha|kya kar rahe|what'?s up|what are you doing|wassup|sup|sab theek|saab theek)\\b",
+        ) -> ChatIntent.HOW_ARE_YOU
+        has(t, "\\b(thank\\w*|shukriya|dhanyavaad)\\b") -> ChatIntent.THANKS
+        has(t, "\\b(who are you|kaun ho|tum kaun|your name)\\b") -> ChatIntent.IDENTITY
+        has(t, "\\b(thak\\w*|tired|exhaust\\w*|sleepy|neend|low energy)\\b") -> ChatIntent.TIRED
+        has(t, "\\b(bored|borg|boring|mann nahi laga)\\b") -> ChatIntent.BORED
+        has(
+            t,
+            "\\b(sad|udaas|dukhi|depress\\w*|lonely|broken|rona|cry\\w*|khush nahi|mann kharab|din kharab|bad day|mann nahi|bura lag\\w*|upset)\\b",
+        ) -> ChatIntent.SAD
+        has(t, "\\b(angry|gussa|furious|irritat\\w*|frustrat\\w*|chir\\w*)\\b") -> ChatIntent.ANGRY
+        has(
+            t,
+            "\\b(anxious|worried|tension|stress\\w*|pareshan|nervous|scared|panic|overthink\\w*|darr)\\b",
+        ) -> ChatIntent.ANXIOUS
+        has(t, "\\b(fever|bukhar|dard|sick|bimari|tabiyat|khansi|cough|medicine|dawa|health|sehat)\\b") -> ChatIntent.SICK
+        has(t, "\\b(love you|pyaar|crush|girlfriend|boyfriend|breakup|shaadi|marriage|propose|relation\\w*)\\b") -> ChatIntent.LOVE
+        has(t, "\\b(happy|khush|mast|excited|great|awesome|good news|celebrat\\w*|love it|love this|bahut achha)\\b") -> ChatIntent.HAPPY
+        has(
+            t,
+            "\\b(khana|khaana|food|lunch|dinner|breakfast|naashta|bhukha|bhookh|eat|ate|swad|recipe|pizza|biryani|chai|coffee|dahi|omelette|paratha|khichdi|dal chawal|noodles|bread|sandwich|burger|momo|samosa|paneer|eggs|andaa|halwa)\\b",
+        ) -> ChatIntent.FOOD
+        has(t, "\\b(joke|mazaak|funny|hasana|laugh|chutkala|comedy)\\b") -> ChatIntent.JOKE
+        has(
+            t,
+            "\\b(padhai|study|studying|exam|revision|notes|seekh\\w*|learn\\w*|course|skill|assignment|homework|teacher|class|college|school)\\b",
+        ) -> ChatIntent.STUDY
+        has(t, "\\b(office|meeting|boss|project|deadline|job|interview|kaam|work|business)\\b") -> ChatIntent.WORK
+        has(t, "\\b(plan\\w*|schedule|routine|tomorrow|weekend|task|aaj ka plan|kal ka plan)\\b") -> ChatIntent.PLAN
+        has(t, "\\b(family|ghar|mom|mummy|dad|papa|bhai|behen|friend|dost|saath|parents)\\b") -> ChatIntent.FAMILY
+        has(t, "\\b(weather|mousam|barish|garmi|sardi|rain)\\b") -> ChatIntent.WEATHER
+        has(t, "\\b(diet|exercise|walk|gym|weight)\\b") -> ChatIntent.HEALTH
+        has(t, "\\b(time|kitne baje|clock)\\b") -> ChatIntent.TIME
+        has(t, "\\b(summar\\w*|recap|overview|chat history|old chats|meshlink chats)\\b") -> ChatIntent.APP_CHAT
+        has(t, "\\b(group\\w*|community|broadcast)\\b") -> ChatIntent.APP_GROUP
+        has(t, "\\b(call\\w*|voice|video|ptt|walkie)\\b") -> ChatIntent.APP_CALL
+        has(t, "\\b(offline|mesh|hotspot|lan|relay|radio)\\b") -> ChatIntent.APP_MESH
+        has(t, "\\b(vault|pin|encrypt\\w*|secur\\w*|password|privacy|hack\\w*)\\b") -> ChatIntent.APP_VAULT
+        has(t, "\\b(qr|link|web|device|login)\\b") -> ChatIntent.APP_LINK
+        has(t, "\\b(identity|email|meshlink id|phone number)\\b") -> ChatIntent.APP_IDENTITY
+        has(t, "\\b(reply|draft|write|compose)\\b") -> ChatIntent.APP_REPLY
+        has(t, "\\b(ollama|model|engine|intelligence|server|api)\\b") -> ChatIntent.AI_ENGINE
+        else -> ChatIntent.UNKNOWN
     }
 }
 
-/** Lightweight emotion check so MeshLink AI can answer with empathy. */
-private fun detectEmotion(text: String): String {
-    val low = text.trim().lowercase()
-    return when {
-        Regex("thaka|thak gaya|tired|exhaust|neend a").containsMatchIn(low) -> "tired"
-        Regex("sad|cry|dukhi|depress|lonely|broken|rona|khush nahi|upset").containsMatchIn(low) -> "sad"
-        Regex("angry|gussa|furious|hate|pagal|bhadwa|irritat").containsMatchIn(low) -> "angry"
-        Regex("anxious|worried|tension|stress|pareshan|nervous|scared|panic").containsMatchIn(low) -> "anxious"
-        Regex("happy|khush|great|awesome|love|shukriya|thanks|excited|mast").containsMatchIn(low) -> "happy"
-        else -> "neutral"
+/** Last meaningful user topic, used for light continuity on short replies. */
+private fun previousTopic(history: List<AiMessage>): ChatIntent? =
+    history.dropLast(1).asReversed()
+        .firstOrNull { it.isUser && detectChatIntent(it.text) != ChatIntent.SHORT_ACK }
+        ?.let { detectChatIntent(it.text) }
+        ?.takeIf { it != ChatIntent.UNKNOWN }
+
+private fun continuityLead(topic: ChatIntent?): String = when (topic) {
+    ChatIntent.FOOD -> "Khaane wali baat yaad aa gayi 😊 "
+    ChatIntent.PLAN -> "Pehle wala plan bhi hai na 💜 "
+    ChatIntent.STUDY -> "Padhai wali baat chal rahi thi 😊 "
+    ChatIntent.WORK -> "Kaam wali baat yaad aa gayi 💜 "
+    ChatIntent.FAMILY -> "Ghar/dost wali baat yaad aa gayi 😊 "
+    ChatIntent.LOVE -> "Pyaar wali baat abhi chal rahi thi 💜 "
+    ChatIntent.TIRED -> "Thakan wali baat yaad aa gayi 💜 "
+    ChatIntent.BORED -> "Boring wala mood tha na 😄 "
+    ChatIntent.SAD -> "Pehle wali baat abhi saath hai 💜 "
+    ChatIntent.ANXIOUS -> "Wahi tension wala feel? 🌿 "
+    ChatIntent.JOKE -> "Joke wala mood tha na 😄 "
+    else -> ""
+}
+
+/** Built-in answer for a detected intent, with deterministic variation. */
+private fun replyFor(intent: ChatIntent, text: String, history: List<AiMessage>): String {
+    val topic = previousTopic(history)
+    val occurrence = history.count { it.isUser && detectChatIntent(it.text) == intent }
+        .coerceAtLeast(1)
+    fun variant(options: List<String>): String = options[(occurrence - 1) % options.size]
+
+    return when (intent) {
+        ChatIntent.SHORT_ACK -> shortAckReply(topic, text, history)
+        ChatIntent.GREETING -> variant(
+            listOf(
+                "Salam! 😊 Main yahan hoon. Aaj kaise ho — sab theek?",
+                "Hey! 👋 Kya haal hai? Waqt mil gaya to batao, kya kar rahe ho?",
+                "Assalam-o-Alaikum! 😊 Aaj din kaisa chal raha hai?",
+            ),
+        )
+        ChatIntent.HOW_ARE_YOU -> variant(
+            listOf(
+                "Main bilkul theek hoon, shukriya 😊 Aap kaise ho? Aaj ka din kaisa gaya?",
+                "Sab achha hai yahan 😊 Aapka haal kya hai? Thoda batao na, kya kar rahe ho?",
+                "Main theek-thak hoon 💜 Aap kaise ho? Koi achhi ya buri baat ho to share kar do.",
+            ),
+        )
+        ChatIntent.THANKS -> variant(
+            listOf(
+                "Koi baat nahi! 😊 Khushi hui ki madad mili. Aur kya chahiye?",
+                "Bilkul 💜 Batao, aur koi baat?",
+                "Shukriya mat karo, main yahin hoon 😊 Aur kya kar sakte hain?",
+            ),
+        )
+        ChatIntent.IDENTITY, ChatIntent.AI_ENGINE ->
+            "Main MeshLink ka private daily assistant hoon — aapki aam baat ka saathi. Khaana, mood, plan, jokes… kuch bhi poocho 💜"
+        ChatIntent.TIRED -> variant(
+            listOf(
+                "Arre, thaka hua lag rahe ho 😔 Paani pi lo aur 10 minute aankhein band kar lo. Aaj ka kaam thoda kam bhi chalega.",
+                "Samajh gaya, energy low hai 💜 Ek chhoti break, thoda walk, phir wapas. Aaj kya baaki hai?",
+                "Thakan bilkul normal hai. 20 minute ki neend ya bas thoda stretch — fresh feel hoga. Main yahin hoon.",
+            ),
+        )
+        ChatIntent.BORED -> variant(
+            listOf(
+                "Bore ho rahe ho 😄 Chalo kuch light — ek joke, 5 minute walk ya koi nayi cheez. Aapka kya mann hai?",
+                "Samajh gaya, mann nahi lag raha 💜 Kabhi-kabhi bas thoda badlaav kaafi hota hai. Ek chhota task pakadte hain?",
+                "Boring din me main joke suna sakta hoon 😄 Ya phir khaana/plan ki baat karte hain. Kya pasand hai?",
+            ),
+        )
+        ChatIntent.HAPPY -> variant(
+            listOf(
+                "Wow, yeh energy dekh ke main bhi khush ho gaya 😄 Kya achhi baat hui? Batao na!",
+                "Love it! 😊 Aapki khushi mujhe bhi lag gayi. Kya celebrate kar rahe ho?",
+                "Mast! 💜 Aaj din achha chal raha hai — yeh feeling thodi der aur rahe. Kis baat se itne khush ho?",
+            ),
+        )
+        ChatIntent.SAD -> variant(
+            listOf(
+                "Poora kya hua nahi pata, par dil bhara hai — main yahin hoon 💜 Thoda batao na, kya baat hai?",
+                "Udas hona bilkul insaani hai. Abhi koi turant fix dhoondhne ki zarurat nahi, bas main sun raha hoon 🌿",
+                "Yeh feel bhari hai 💜 Ek deep saans lo. Jo bhi hai, step-by-step dekhte hain. Abhi kya sabse zyada para hai?",
+            ),
+        )
+        ChatIntent.ANGRY -> variant(
+            listOf(
+                "Gussa aana bilkul natural hai jab kuch galat ho 😤 Pehle ek deep saans, phir baat karte hain. Kya hua?",
+                "Samajh gaya, aap irritate ho rahe ho 💜 Chalo thoda pause, phir ek-ek karke dekhte hain.",
+                "Frustration samajh aa raha hai 💜 Kya sabse zyada chirkiya aa rahi hai? Usi se shuru karein.",
+            ),
+        )
+        ChatIntent.ANXIOUS -> variant(
+            listOf(
+                "Tension ho rahi hai to pehle 4 second andar, 4 bahar 🌿 Sab kuch ek saath solve nahi karna. Sabse chhoti baat kya hai?",
+                "Pareshani samajh gaya 💜 Dimag bahut soch raha hoga. Ek list banate hain: kya control me hai, kya nahi.",
+                "Take it easy, main yahin hoon. Aaj bas ek chhota step enough hai. Kya sabse zyada soch aa raha hai?",
+            ),
+        )
+        ChatIntent.SICK -> variant(
+            listOf(
+                "Tabiyat kharab hai to paani, aaram aur light khaana 💜 Fever/dard zyada ho ya 2 din chal jaye to doctor se milna zaroori. Kya feel ho raha hai?",
+                "Bimari me dimag bhi thaka hota hai. Dawa time par lo, kaam kal ke liye chhod do. Kya symptoms hain?",
+            ),
+        )
+        ChatIntent.FOOD -> {
+            val reporting = has(
+                text,
+                "\\b(kya khaya|kya khaaya|khaya|kha liya|kha gaya|ate|khaana kya)\\b",
+            )
+            if (reporting) {
+                val food = mentionedFood(text)
+                if (food != null) {
+                    "Accha, $food sun ke bhukh aa gayi 😄 Thoda dahi ya salad saath kar lo. Agle meal me kya khana chahte ho?"
+                } else {
+                    variant(
+                        listOf(
+                            "Mere paas khaana nahi hota 😄 — aapne kya khaya? Us hisaab se agla meal suggest kar dunga.",
+                            "Accha! 😊 Aaj kya khaya? Bata dijiye to doosre meal ka idea de sakta hoon.",
+                            "Achcha, sun ke khushi hui 😊 Aur kuch tasty banane ka mann hai?",
+                        ),
+                    )
+                }
+            } else {
+                variant(
+                    listOf(
+                        "Dinner ke liye teen easy options: dal-chawal + dahi, omelette ya paneer paratha, ya khichdi thode achar ke saath. Aapko kya pasand hai? 😊",
+                        "Bhookh lag gayi to 10 minute me bread-omelette ya noodles bana lo. Thoda salad bhi add kar lo — aaj kya mann hai?",
+                        "Kuch light chahiye to khichdi/dal-chawal, kuch masaledar chahiye to paratha ya biryani. Aap kaunsa mood hai? 🍽️",
+                    ),
+                )
+            }
+        }
+        ChatIntent.PLAN -> variant(
+            listOf(
+                "Chalo simple plan: 1) sabse zaroori kaam pehle, 2) 25 minute focus + 5 minute break, 3) thoda paani aur walk, 4) shaam me 5 minute review. Aapka first task kya hai?",
+                "Ek chhota schedule: pehle ek important kaam, phir chhoti break, phir baaki. Raat ko phone thoda door rakhna. Aapka din kaisa hai aaj?",
+                "Plan ban gaya 💜 Bas ek kaam chuno, timer lagao, karte jao. Kya shuru karein?",
+            ),
+        )
+        ChatIntent.WORK -> variant(
+            listOf(
+                "Kaam me heavy din ho to pehle 'must-do' task pakdo, baaki kal. 25-minute focus blocks zyada asardaar hote hain. Aaj sabse bada kaam kya hai?",
+                "Office wali baat samajh gaya 💜 Pehle 3 points likh lo, phir baat aasan ho jayegi. Kya deadline hai?",
+                "Boss/meeting ki tension ho to deep breath, notes, aur ek clear question. Aapko kya clarify karna hai?",
+            ),
+        )
+        ChatIntent.STUDY -> variant(
+            listOf(
+                "Padhai ka simple formula: 20 minute theory, 20 minute practice, phir apne words me summarize. Roz thoda, par roz. Aaj kya topic hai?",
+                "Exam close ho to ek topic, ek timer, ek break — bas. Notes chhote rakho, revision baad me. Kya subject padh rahe ho?",
+                "Seekhn ka best tareeka: samjho, likho, phir kisi ko samjhao. Aaj kya seekhna chahte ho?",
+            ),
+        )
+        ChatIntent.FAMILY -> variant(
+            listOf(
+                "Family aur dost sabse bada support hote hain 💜 Ek chhoti 'kaise ho' message bhi din bana deti hai. Aap kis ke baare me soch rahe ho?",
+                "Ghar wale ya dost yaad aa rahe hai? Unhe ek quick message kar do — baat phir apne aap chal jayegi. Kya baat hai?",
+                "Saath wale log zaroori hote hain 😊 Aap unke saath kya kar rahe ho ya kya kehna chahte ho?",
+            ),
+        )
+        ChatIntent.LOVE -> variant(
+            listOf(
+                "Pyaar me sab natural hai — khushi bhi, confusion bhi 💜 Honest baat karo aur boundaries ka khayal rakho. Aap kya feel kar rahe ho?",
+                "Crush ya relationship ki baat hai? Pehle apne dil ki suno, phir saamne wale ki. Jaldi faisla mat lo. Batao, kya hua?",
+                "Yeh dil ki baat hai, main yahin hoon 💜 Chahe confuse ho ya khush — dono theek hain. Kya sabse zyada mann me hai?",
+            ),
+        )
+        ChatIntent.JOKE -> variant(
+            listOf(
+                "Ek chhota sa: fridge khola to bill mila — 'Payment pending' 😄 Aur ek? dost bola 'diet par hoon', phir pizza order kar diya 🍕. Aur sunaoon?",
+                "Teacher: '2+2 kya?' Baccha: 'Sir, weekend aa gaya, sab bhool gaye 😅' Aur ek joke chahiye?",
+                "Aaj ka joke: alarm 6:00 par lagaya, khud 6:05 par soya 😴. Relate kar rahe ho? 😄",
+            ),
+        )
+        ChatIntent.WEATHER ->
+            "Mere paas live weather nahi hai 🌦️ Phone ke weather app se check kar lo. Barish/garmi ho to chhatri/paani saath rakhna. Aaj aapke yahan kaisa hai?"
+        ChatIntent.HEALTH ->
+            "Sehat pehle 💜 Paani, neend aur thoda movement sabse zyada farak dete hain. Fever ya dard ho to doctor se consult karna better. Main general tips de sakta hoon, diagnosis nahi."
+        ChatIntent.TIME ->
+            "Mere paas aapki local clock access nahi hai, phone ki clock dekh lijiye ⏰ Chahein to time management me madad kar sakta hoon."
+        ChatIntent.APP_CHAT ->
+            "MeshLink chats phone par encrypted vault me rehti hain. Chats tab se conversations dekh sakte ho — cloud par upload nahi hota. Main reply draft karne me bhi madad kar sakta hoon."
+        ChatIntent.APP_GROUP ->
+            "Groups device par hote hain aur mesh ke through tab sync hote hain jab peers paas ho. MeshLink ID se log add karo; internet na ho to bhi messages aage badhte hain."
+        ChatIntent.APP_CALL ->
+            "Calls ke 3 layer hain: online encrypted WebRTC audio/video, local Wi-Fi Direct/mesh P2P with push-to-talk, aur offline voice-note jo baad me sync hota hai."
+        ChatIntent.APP_MESH ->
+            "MeshLink ke 3 layer hain: internet par online relay, internet na ho to local hotspot/LAN mesh (Bluetooth LE, Wi-Fi Direct, SMS), aur store-and-forward."
+        ChatIntent.APP_VAULT ->
+            "Vault AES-256-GCM aur PBKDF2-SHA256 use karta hai. 6-digit app PIN doosra layer hai aur 5 minute baad auto-lock hota hai."
+        ChatIntent.APP_LINK ->
+            "QR linking: Settings → Link device, website ka QR scan karo, phir yahan approve karo. Session short-lived hota hai aur messages share nahi hote."
+        ChatIntent.APP_IDENTITY ->
+            "MeshLink ID isi device par banti hai aur kabhi nahi badalti. Verified email security check hai, pehchaan nahi — chat me kabhi nahi dikhti."
+        ChatIntent.APP_REPLY ->
+            "Try karo: \"Bhai, message mil gaya — main 10 minute me reply karta hoon.\" Short, clear aur warm. Formal ya casual chahiye?"
+        ChatIntent.UNKNOWN -> fallbackReply(topic, history)
     }
+}
+
+/** "hmm / ok / thoda sa" replies lean on the previous topic instead of guessing. */
+private fun shortAckReply(
+    topic: ChatIntent?,
+    text: String,
+    history: List<AiMessage>,
+): String {
+    val t = normalizeChat(text)
+    val index = history.size
+    fun pick(options: List<String>): String = options[index % options.size]
+
+    return when {
+        has(t, "\\b(nahi|no)\\b") -> when (topic) {
+            ChatIntent.FOOD -> "Theek, koi baat nahi 😊 Kuch aur pasand hai to batao."
+            ChatIntent.TIRED -> "Koi baat nahi, aaram ko priority do 💜."
+            else -> "Theek, samajh gaya 😊 Aur kya soch rahe ho?"
+        }
+        has(t, "\\bthoda\\b") -> when (topic) {
+            ChatIntent.FOOD -> "Thoda sa matlab light? 😊 Dal-chawal ya omelette try karo — aapko kya pasand hai?"
+            ChatIntent.TIRED -> "Thoda sa aaram bhi kaam ka hota hai 💜 10 minute le lo."
+            ChatIntent.HAPPY -> "Thoda sa khushi bhi bahut hoti hai 😄 Kya milestone hai?"
+            else -> "Thoda sa bhi enough hai 😊 Batao na, kis baare me baat kar rahe ho?"
+        }
+        has(t, "\\b(haan|han|yep|yes|ya|achha|accha|ok|okay)\\b") -> when (topic) {
+            ChatIntent.FOOD -> pick(
+                listOf(
+                    "Haan, khaane me kuch simple pakad lo 😊 Aapko kya mann hai?",
+                    "Bilkul, light option dal-chawal ya omelette. Aur kya chahiye?",
+                ),
+            )
+            ChatIntent.TIRED -> "Haan, bilkul 💜 Thoda aaram kar lo — aapki thakan samajh sakti hoon."
+            ChatIntent.BORED -> "Haan, bas mann lagane ka ek chhota idea chahiye 😄 Joke sunaoon ya kuch naya try karein?"
+            ChatIntent.SAD -> "Haan, main yahin hoon 💜 Koi pressure nahi, jab batao tab sununga."
+            ChatIntent.JOKE -> "Haan, aur ek joke chahiye? 😄 Suna raha hoon."
+            ChatIntent.FAMILY -> "Haan, unhe ek quick message kar do — baat apne aap chal jayegi 😊"
+            ChatIntent.LOVE -> "Haan, dil ki baat ko thoda time do 💜 Main yahin hoon."
+            ChatIntent.STUDY, ChatIntent.PLAN, ChatIntent.WORK ->
+                "Haan, bas ek chhota step pehle. Baaki baad me dekhte hain — kya shuru karein?"
+            else -> "Haan, samajh gaya 😊 Aur kya baat karein?"
+        }
+        else -> when (topic) {
+            ChatIntent.FOOD -> "Hmmm, khaane wali baat yaad aa gayi 😊 Thoda batao to exact suggestion du."
+            ChatIntent.TIRED -> "Hmmm, thakan samajh aa rahi hai 💜 Abhi ek chhoti break enough hai."
+            ChatIntent.SAD -> "Hmmm, main yahin hoon 💜 Kya mann me chal raha hai?"
+            ChatIntent.BORED -> "Hmmm, bore ho rahe ho na 😄 Ek joke ya chhota walk — kya bataon?"
+            ChatIntent.JOKE -> "Hmmm, aur ek joke chahiye? 😄 Sunaoon?"
+            ChatIntent.FAMILY -> "Hmmm, ghar/dost wali baat yaad aa gayi 😊 Kya kehna hai unhe?"
+            ChatIntent.LOVE -> "Hmmm, dil wali baat chal rahi thi 💜 Kya feel ho raha hai?"
+            else -> pick(
+                listOf(
+                    "Hmmm, samajh gaya 😊 Thoda aur batao to main aur accha reply kar paun — aaj kaise ho?",
+                    "Haan, main sun raha hoon 💜 Kya baat kar rahe ho?",
+                ),
+            )
+        }
+    }
+}
+
+/** Natural, non-robotic answer for free-form statements or engine failure. */
+private fun fallbackReply(topic: ChatIntent?, history: List<AiMessage>): String {
+    val lead = continuityLead(topic)
+    val options = listOf(
+        "${lead}Aapki baat samajh aa gayi 😊 Isme aapka agla step kya hai? Main yahin hoon.",
+        "${lead}Haan, yeh bhi ek baat hai 💜 Thoda aur batao to main aur clear answer de paun.",
+        "${lead}Interesting — aap kis taraf soch rahe ho? Chalo ek chhoti baat se shuru karte hain.",
+    )
+    return options[history.size % options.size]
+}
+
+/** Every chat gets a built-in answer; unknown topics may use the private engine. */
+private fun builtInReply(history: List<AiMessage>, prompt: String): BuiltInReply {
+    val intent = detectChatIntent(prompt)
+    return BuiltInReply(
+        text = replyFor(intent, normalizeChat(prompt), history),
+        confident = intent != ChatIntent.UNKNOWN,
+    )
+}
+
+private val MECHANICAL_REPLY_PATTERNS = listOf(
+    Regex(
+        "\\bi(?:'m| am)\\s+(?:an?\\s+)?(?:ai|language model|virtual assistant|program)\\b",
+        RegexOption.IGNORE_CASE,
+    ),
+    Regex("\\bas an? (?:ai|language model)\\b", RegexOption.IGNORE_CASE),
+    Regex(
+        "\\b(?:ollama|api key|endpoint|server|model name|configuration|setup)\\b",
+        RegexOption.IGNORE_CASE,
+    ),
+    Regex(
+        "\\bmodel (?:is )?not available\\b|\\bno model\\b|\\bplease ask something else\\b|\\bi (?:can't|cannot) (?:answer|help)\\b",
+        RegexOption.IGNORE_CASE,
+    ),
+    Regex("\\b(?:json|training data|as a responsible)\\b|[{}<>]|```", RegexOption.IGNORE_CASE),
+)
+
+/** Reject mechanical, technical or broken model output before showing it. */
+private fun cleanEngineReply(raw: String): String? {
+    val cleaned = raw.trim().trim('"', '\'')
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    if (cleaned.length < 8 || cleaned.length > 700) return null
+    if (MECHANICAL_REPLY_PATTERNS.any { it.containsMatchIn(cleaned) }) return null
+    return cleaned
 }

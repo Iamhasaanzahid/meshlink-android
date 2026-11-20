@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.31.0 — 2026-11-20 — WhatsApp-style send queue + premium mobile UI + smarter AI
+
+### Added
+- Messages sent while offline are queued locally and sent automatically the moment the internet or a nearby radio returns. Group messages, photos and voice notes retry with the correct wire format, and a single flush gate prevents duplicate sends.
+- The persistent notification now shows the pending message count and includes a direct Reply action, so queued conversations stay reachable without opening the app.
+- A richer premium mobile look across chat list, conversation, calls, drawer and settings: violet/indigo palette, elevated surfaces, refined bubbles and composer, and a soft purple light theme alongside the refined dark theme.
+- Everyday AI now answers casual conversation naturally — greetings, mood, food, plans, study, work, jokes and random small talk — with warm Roman Urdu replies. All engine details stay hidden.
+- Calling has been repaired end to end: MeshLink ID calls now always use the worldwide internet relay (waiting for it to connect instead of instantly falling into a failing local call), with stable ringing/answer/hangup, graceful unreachable states and no microphone/audio leakage after a call ends.
+
 ## 1.30.0 — 2026-11-20 — everyday AI, clean chat UI
 
 ### Changed

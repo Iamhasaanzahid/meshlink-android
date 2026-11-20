@@ -2,7 +2,9 @@ package com.meshlink.app.ui
 
 import android.net.wifi.p2p.WifiP2pDevice
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,8 +14,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -38,7 +42,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -89,6 +95,8 @@ fun SettingsScreen(
     var phoneDraft by remember(myPhone) { mutableStateOf(myPhone) }
     var brokerDraft by remember(onlineBroker) { mutableStateOf(onlineBroker) }
     val context = LocalContext.current
+    val tokens = MeshTokens.palette
+    val themeMode = ThemeController.mode
     val scope = rememberCoroutineScope()
     var updateInfo by remember { mutableStateOf<AppUpdate?>(null) }
     var updateChecking by remember { mutableStateOf(false) }
@@ -145,47 +153,82 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        // Profile card
+        // Profile card — the same gradient identity as the chat header.
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
         ) {
-            Row(
-                modifier = Modifier
+            Box(
+                Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .background(
+                        Brush.linearGradient(
+                            listOf(tokens.headerStart, tokens.headerMid, tokens.headerEnd),
+                        ),
+                    ),
             ) {
-                Box(modifier = Modifier.clickable { onPickAvatar() }) {
-                    Avatar(displayName.ifBlank { myUin }, 64.dp, photoPath = avatarPath)
-                }
-                Spacer(Modifier.padding(14.dp, 0.dp, 0.dp, 0.dp))
-                Column {
-                    Text(
-                        displayName.ifBlank { "MeshLink user" },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "ID: $myUin",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "Your ID lives on this phone · no account",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    )
-                    Row {
-                        TextButton(onClick = onPickAvatar) {
-                            Text(if (avatarPath == null) "Add photo" else "Change photo")
-                        }
-                        if (avatarPath != null) {
-                            TextButton(onClick = onRemoveAvatar) { Text("Remove") }
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 30.dp, y = (-40).dp)
+                        .size(150.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
+                            ),
+                        ),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .clickable { onPickAvatar() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Avatar(displayName.ifBlank { myUin }, 64.dp, photoPath = avatarPath)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            displayName.ifBlank { "MeshLink user" },
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 19.sp,
+                            color = Color.White,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "ID: $myUin",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White.copy(alpha = 0.92f),
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Your ID lives on this phone · no account",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.78f),
+                        )
+                        Row {
+                            TextButton(onClick = onPickAvatar) {
+                                Text(
+                                    if (avatarPath == null) "Add photo" else "Change photo",
+                                    color = Color.White,
+                                )
+                            }
+                            if (avatarPath != null) {
+                                TextButton(onClick = onRemoveAvatar) {
+                                    Text("Remove", color = Color.White)
+                                }
+                            }
                         }
                     }
                 }
@@ -193,11 +236,19 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(18.dp))
+        SectionTitle("Appearance")
+        ThemeModeSelector(
+            mode = themeMode,
+            onSelect = { ThemeController.set(context, it) },
+        )
+
+        Spacer(Modifier.height(18.dp))
         SectionTitle("Online mode")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -271,8 +322,9 @@ fun SettingsScreen(
         SectionTitle("SMS reach")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
@@ -308,8 +360,9 @@ fun SettingsScreen(
         Spacer(Modifier.height(10.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(
@@ -347,8 +400,9 @@ fun SettingsScreen(
         SectionTitle("Radios")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
                 InfoRow(
@@ -391,8 +445,9 @@ fun SettingsScreen(
         SectionTitle("Range & relays")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                 Row(
@@ -433,8 +488,9 @@ fun SettingsScreen(
         SectionTitle("Coverage")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
                 InfoRow("Bluetooth LE", "10–50 m per hop · no SIM, no router", true)
@@ -484,8 +540,9 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(13.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
                 ) {
                     Row(
                         modifier = Modifier
@@ -518,8 +575,9 @@ fun SettingsScreen(
         SectionTitle("Privacy")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
                 InfoRow("Data collected", "0% · no account, no server, no tracking", true)
@@ -577,8 +635,9 @@ fun SettingsScreen(
         SectionTitle("Devices")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text("Link web", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -630,8 +689,9 @@ fun SettingsScreen(
         SectionTitle("Backup")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text("Export chats", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -650,8 +710,9 @@ fun SettingsScreen(
         SectionTitle("App updates")
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = tokens.rowStart),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text("Current version: ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Medium, fontSize = 14.sp)
@@ -815,14 +876,80 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        fontWeight = FontWeight.Bold,
-        fontSize = 13.sp,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = 6.dp),
+private fun ThemeModeSelector(
+    mode: AppThemeMode,
+    onSelect: (AppThemeMode) -> Unit,
+) {
+    val tokens = MeshTokens.palette
+    val options = listOf(
+        AppThemeMode.DARK to "Dark",
+        AppThemeMode.LIGHT to "Light",
+        AppThemeMode.SYSTEM to "System",
     )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(tokens.rowStart)
+            .border(1.dp, tokens.hairline, RoundedCornerShape(20.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        options.forEach { (value, label) ->
+            val selected = mode == value
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            if (selected) {
+                                listOf(tokens.violet, tokens.lilac)
+                            } else {
+                                listOf(tokens.rowEnd, tokens.rowEnd)
+                            },
+                        ),
+                    )
+                    .clickable { onSelect(value) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    color = if (selected) Color.White
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Row(
+        modifier = Modifier.padding(bottom = 8.dp, top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(width = 3.dp, height = 15.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(MeshTokens.palette.violet, MeshTokens.palette.lilac),
+                    ),
+                ),
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            text,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 private fun peerStatus(status: Int): String = when (status) {

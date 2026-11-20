@@ -8,13 +8,16 @@ import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
@@ -82,6 +85,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -142,6 +146,20 @@ fun HomeScreen(
     var videoCallWanted by remember { mutableStateOf(false) }
     var pinnedPeers by remember { mutableStateOf(MeshSettings.pinned(context)) }
     var mutedPeers by remember { mutableStateOf(MeshSettings.muted(context)) }
+
+    var engine by remember { mutableStateOf(MeshService.engine) }
+    var status by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
+    var wifiPeers by remember { mutableStateOf<List<WifiP2pDevice>>(emptyList()) }
+
+    val tokens = MeshTokens.palette
+    val isOnline = status["onlineConnected"] == true
+    val presence = when {
+        isOnline -> "Online"
+        (status["wifiLanPeers"] as? Int ?: 0) > 0 -> "Nearby"
+        status["wifiGroup"] == true -> "Nearby"
+        (status["blePeers"] as? Int ?: 0) > 0 -> "Nearby"
+        else -> "Offline"
+    }
 
     var maxHops by remember { mutableStateOf(MeshSettings.maxHops(context)) }
     var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
@@ -217,10 +235,6 @@ fun HomeScreen(
             smsPermissionLauncher.launch(PermissionsHelper.smsPermissions())
         }
     }
-
-    var engine by remember { mutableStateOf(MeshService.engine) }
-    var status by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
-    var wifiPeers by remember { mutableStateOf<List<WifiP2pDevice>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         while (engine == null) {
@@ -331,26 +345,37 @@ fun HomeScreen(
     fun startCall(peer: String, name: String) {
         val mesh = engine
         val isUin = peer.isMeshLinkId()
-        if (mesh?.onlineIsConnected == true && isUin) {
-            OnlineCallManager.startRelayedCall(peer, name)
-            onlineCallOpen = true
+
+        // A MeshLink ID is an internet identity: always wait for the relay
+        // instead of falling straight into a local radio call that immediately
+        // dies when the peer is not nearby. This is the WhatsApp-style path.
+        if (isUin) {
+            if (!onlineEnabled) {
+                // Offer to switch the relay on instead of failing with a dead end.
+                callPrompt = peer to name
+                return
+            }
+            if (mesh?.onlineIsConnected == true) {
+                OnlineCallManager.startRelayedCall(peer, name)
+                onlineCallOpen = true
+            } else {
+                pendingOnlineCall = peer to name
+                videoCallWanted = false
+                Toast.makeText(
+                    context,
+                    "Connecting to the internet relay…",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
             return
         }
+
+        // Phone-number calls only make sense over the local radio/SIM path.
         if (mesh != null && CallManager.placeCall(peer, name)) return
-        if (isUin && !onlineEnabled) {
-            // Mobile data is the usual way to reach another country. Offer to
-            // switch the relay on instead of failing with a dead end.
-            callPrompt = peer to name
-            return
-        }
         Toast.makeText(
             context,
-            if (isUin && onlineEnabled) {
-                "The relay is still connecting. Try the call again in a few seconds."
-            } else {
-                "No call path right now. Move closer for Wi-Fi, or save a UIN to call " +
-                    "over the internet."
-            },
+            "No local call path right now. Move closer for Wi-Fi, or save the " +
+                "friend's MeshLink ID to call over the internet.",
             Toast.LENGTH_LONG,
         ).show()
     }
@@ -450,89 +475,215 @@ fun HomeScreen(
             drawerState = drawerState,
             drawerContent = {
                 ModalDrawerSheet(
-                    modifier = Modifier.width(300.dp),
-                    drawerContainerColor = WebDarkPanel,
-                    drawerContentColor = WebDarkText,
+                    modifier = Modifier.width(312.dp),
+                    drawerContainerColor = tokens.drawer,
+                    drawerContentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 14.dp, vertical = 24.dp),
+                            .verticalScroll(rememberScrollState()),
                     ) {
-                        Text(
-                            "MeshLink",
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                        )
-                        Text(
-                            "Private by design",
-                            color = BrandLight,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.2.sp,
-                            modifier = Modifier.padding(start = 13.dp, top = 2.dp, bottom = 18.dp),
-                        )
-                        val drawerItems = listOf(0, 1, 4, 5, 6, 2, 7)
-                        drawerItems.forEach { index ->
-                            val label = when (index) {
-                                0 -> "Chats"
-                                1 -> "Calls"
-                                2 -> "Nearby"
-                                4 -> "Status"
-                                5 -> "Starred"
-                                6 -> "Archived"
-                                else -> "Settings"
-                            }
-                            val icon = when (index) {
-                                0 -> Icons.Filled.Chat
-                                1 -> Icons.Filled.Call
-                                2 -> Icons.Filled.Wifi
-                                4 -> Icons.Filled.Info
-                                5 -> Icons.Filled.Star
-                                6 -> Icons.Filled.Archive
-                                else -> Icons.Filled.Settings
-                            }
-                            Row(
+                        // Identity header: avatar, name, 10-digit ID and presence.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            tokens.headerStart,
+                                            tokens.headerMid,
+                                            tokens.headerEnd,
+                                        ),
+                                    ),
+                                ),
+                        ) {
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        tab = index
-                                        scope.launch { drawerState.close() }
-                                    }
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 36.dp, y = (-46).dp)
+                                    .size(180.dp)
+                                    .clip(CircleShape)
                                     .background(
-                                        if (tab == index) BrandViolet.copy(alpha = 0.22f)
-                                        else Color.Transparent,
-                                        RoundedCornerShape(14.dp),
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                        Brush.radialGradient(
+                                            listOf(
+                                                Color.White.copy(alpha = 0.24f),
+                                                Color.Transparent,
+                                            ),
+                                        ),
+                                    ),
+                            )
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 18.dp, end = 18.dp),
                             ) {
-                                Icon(icon, contentDescription = null, tint = if (tab == index) BrandLight else WebDarkMuted)
-                                Spacer(Modifier.width(16.dp))
-                                Text(label, color = if (tab == index) Color.White else WebDarkText2, fontSize = 15.sp)
-                                if (index == 0 && chats.sumOf { it.unread } > 0) {
-                                    Spacer(Modifier.weight(1f))
-                                    Badge { Text(chats.sumOf { it.unread }.toString()) }
+                                MeshMark(34.dp)
+                            }
+                            Column(
+                                modifier = Modifier.padding(
+                                    start = 20.dp, end = 20.dp, top = 36.dp, bottom = 22.dp,
+                                ),
+                            ) {
+                                Avatar(
+                                    displayName.ifBlank { myUin },
+                                    64.dp,
+                                    showOnline = isOnline,
+                                    photoPath = avatarPath,
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                Text(
+                                    "MeshLink",
+                                    color = Color.White,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                )
+                                Text(
+                                    "Private by design",
+                                    color = BrandLilac,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.4.sp,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    StatusPill(myUin, tokens.lilac)
+                                    StatusPill(
+                                        presence,
+                                        if (isOnline) tokens.mint else tokens.amber,
+                                    )
                                 }
                             }
                         }
-                        HorizontalDivider(color = WebDarkSurface2, modifier = Modifier.padding(vertical = 12.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    aiOpen = true
-                                    scope.launch { drawerState.close() }
+
+                        Column(Modifier.padding(horizontal = 14.dp, vertical = 18.dp)) {
+                            val drawerItems = listOf(0, 1, 4, 5, 6, 2, 7)
+                            drawerItems.forEach { index ->
+                                val label = when (index) {
+                                    0 -> "Chats"
+                                    1 -> "Calls"
+                                    2 -> "Nearby"
+                                    4 -> "Status"
+                                    5 -> "Starred"
+                                    6 -> "Archived"
+                                    else -> "Settings"
                                 }
-                                .padding(horizontal = 14.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = BrandLight)
-                            Spacer(Modifier.width(16.dp))
-                            Text("MeshLink AI", color = WebDarkText, fontSize = 15.sp)
+                                val icon = when (index) {
+                                    0 -> Icons.Filled.Chat
+                                    1 -> Icons.Filled.Call
+                                    2 -> Icons.Filled.Wifi
+                                    4 -> Icons.Filled.Info
+                                    5 -> Icons.Filled.Star
+                                    6 -> Icons.Filled.Archive
+                                    else -> Icons.Filled.Settings
+                                }
+                                val accent = when (index) {
+                                    0 -> tokens.violet
+                                    1 -> tokens.mint
+                                    2 -> tokens.sky
+                                    4 -> tokens.sky
+                                    5 -> tokens.amber
+                                    6 -> tokens.coral
+                                    else -> tokens.lilac
+                                }
+                                val selected = tab == index
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(54.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                if (selected) {
+                                                    listOf(
+                                                        accent.copy(alpha = 0.28f),
+                                                        accent.copy(alpha = 0.05f),
+                                                    )
+                                                } else {
+                                                    listOf(Color.Transparent, Color.Transparent)
+                                                },
+                                            ),
+                                        )
+                                        .clickable {
+                                            tab = index
+                                            scope.launch { drawerState.close() }
+                                        }
+                                        .padding(horizontal = 12.dp),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (selected) {
+                                            Box(
+                                                Modifier
+                                                    .size(width = 3.dp, height = 26.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(accent),
+                                            )
+                                            Spacer(Modifier.width(12.dp))
+                                        } else {
+                                            Spacer(Modifier.width(15.dp))
+                                        }
+                                        Icon(
+                                            icon,
+                                            contentDescription = null,
+                                            tint = if (selected) accent
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.width(16.dp))
+                                        Text(
+                                            label,
+                                            color = if (selected) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 15.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        if (index == 0 && chats.sumOf { it.unread } > 0) {
+                                            Badge { Text(chats.sumOf { it.unread }.toString()) }
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(
+                                color = tokens.hairline,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                tokens.violet.copy(alpha = 0.18f),
+                                                tokens.lilac.copy(alpha = 0.04f),
+                                            ),
+                                        ),
+                                    )
+                                    .clickable {
+                                        aiOpen = true
+                                        scope.launch { drawerState.close() }
+                                    }
+                                    .padding(horizontal = 16.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Filled.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = tokens.lilac,
+                                    )
+                                    Spacer(Modifier.width(16.dp))
+                                    Text(
+                                        "MeshLink AI",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -541,21 +692,40 @@ fun HomeScreen(
         Scaffold(
             topBar = {
                 if (tab != 3) {
-                val presence = when {
-                    status["onlineConnected"] == true -> "Online"
-                    (status["wifiLanPeers"] as? Int ?: 0) > 0 -> "Nearby"
-                    status["wifiGroup"] == true -> "Nearby"
-                    (status["blePeers"] as? Int ?: 0) > 0 -> "Nearby"
-                    else -> "Offline"
-                }
-                val isOnline = status["onlineConnected"] == true
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            Brush.verticalGradient(listOf(BrandViolet, BrandDeep)),
+                            Brush.verticalGradient(
+                                listOf(tokens.headerStart, tokens.headerMid, tokens.headerEnd),
+                            ),
                         ),
                 ) {
+                    // Soft light blooming from the corners gives the header depth.
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 40.dp, y = (-70).dp)
+                            .size(240.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
+                                ),
+                            ),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = (-80).dp, y = 40.dp)
+                            .size(200.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                                ),
+                            ),
+                    )
                     Column(
                         modifier = Modifier
                             .statusBarsPadding()
@@ -569,9 +739,10 @@ fun HomeScreen(
                                 Text(
                                     "MeshLink",
                                     color = Color.White,
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 25.sp,
+                                    fontWeight = FontWeight.ExtraBold,
                                     letterSpacing = 0.2.sp,
+                                    maxLines = 1,
                                 )
                                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                     Box(
@@ -588,6 +759,8 @@ fun HomeScreen(
                                         color = Color.White.copy(alpha = 0.85f),
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -608,8 +781,13 @@ fun HomeScreen(
                         if (tab == 0) {
                             Spacer(Modifier.height(16.dp))
                             Surface(
-                                color = Color.White.copy(alpha = 0.16f),
-                                shape = RoundedCornerShape(18.dp),
+                                color = Color.White.copy(alpha = 0.14f),
+                                contentColor = Color.White,
+                                shape = RoundedCornerShape(20.dp),
+                                shadowElevation = 10.dp,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp, Color.White.copy(alpha = 0.24f),
+                                ),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Row(
@@ -644,7 +822,7 @@ fun HomeScreen(
                                     if (query.isNotEmpty()) {
                                         IconButton(
                                             onClick = { query = "" },
-                                            modifier = Modifier.size(26.dp),
+                                            modifier = Modifier.size(48.dp),
                                         ) {
                                             Icon(
                                                 Icons.Filled.Close,
@@ -663,30 +841,87 @@ fun HomeScreen(
             },
             floatingActionButton = {
                 if (tab == 0) {
-                    ExtendedFloatingActionButton(
+                    Surface(
                         onClick = { newChatOpen = true },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.White,
-                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                        text = { Text("New chat") },
-                    )
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.Transparent,
+                        shadowElevation = 14.dp,
+                        modifier = Modifier.height(56.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(tokens.violet, tokens.lilac),
+                                    ),
+                                )
+                                .padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White)
+                            Text(
+                                "New chat",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                            )
+                        }
+                    }
                 }
             },
             bottomBar = {
-                // WhatsApp-style calm bottom bar: everything else lives in the
-                // side drawer, so labels never get squashed or truncated.
-                NavigationBar(
-                    containerColor = WebDarkPanel,
-                    tonalElevation = 0.dp,
+                // Elevated glassy rail: the two primary destinations stay here,
+                // everything else lives in the side drawer.
+                Surface(
+                    color = tokens.navBar.copy(alpha = 0.97f),
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    shadowElevation = 20.dp,
+                    modifier = Modifier.clip(
+                        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    ),
                 ) {
+                Box {
+                    // Slim active rail above the destinations — instantly
+                    // readable even when the badge sits on the icon.
+                    Row(
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                    ) {
+                        listOf(0, 1).forEach { index ->
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(
+                                        if (tab == index) {
+                                            Brush.horizontalGradient(
+                                                listOf(tokens.violet, tokens.lilac),
+                                            )
+                                        } else {
+                                            Brush.horizontalGradient(
+                                                listOf(Color.Transparent, Color.Transparent),
+                                            )
+                                        },
+                                    ),
+                            )
+                        }
+                    }
+                    NavigationBar(
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp,
+                    ) {
                     listOf(0 to "Chats", 1 to "Calls").forEach { (index, label) ->
                         NavigationBarItem(
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
-                                selectedTextColor = BrandLight,
-                                indicatorColor = BrandViolet,
-                                unselectedIconColor = WebDarkMuted,
-                                unselectedTextColor = WebDarkMuted,
+                                selectedTextColor = tokens.lilac,
+                                indicatorColor = tokens.violet,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
                             selected = tab == index,
                             onClick = { tab = index },
@@ -705,6 +940,8 @@ fun HomeScreen(
                             label = { Text(label) },
                         )
                     }
+                }
+                }
                 }
             },
         ) { padding ->
@@ -878,7 +1115,7 @@ fun HomeScreen(
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
                     .width(390.dp),
-                color = WebDarkPanel,
+                color = tokens.drawer,
                 shadowElevation = 24.dp,
             ) {
                 AiScreen(onBack = { aiOpen = false })

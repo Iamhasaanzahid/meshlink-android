@@ -1,7 +1,8 @@
 package com.meshlink.app.ui
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,9 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -45,16 +50,16 @@ import java.util.Locale
 
 // ------------------------------------------------------------------ palette
 
-val ChatBackground = Color(0xFFF1ECFA)
-val IncomingBubble = Color(0xFFFFFFFF)
+val ChatBackground = WebLightBgSoft
+val IncomingBubble = WebLightPanel
 val OutgoingBubble = BrandViolet
 val TickBlue = Color(0xFF9FE8FF)
-val OnlineGreen = Color(0xFF00C88A)
+val OnlineGreen = Color(0xFF34D399)
 
 private val AvatarColors = listOf(
-    Color(0xFF6750A4), Color(0xFF7D5260), Color(0xFF1B6C7A),
-    Color(0xFF7A5B18), Color(0xFF4C662B), Color(0xFF8C4A6B),
-    Color(0xFF3F5F8A), Color(0xFF6B4E8F),
+    Color(0xFF7C3AED), Color(0xFF2563EB), Color(0xFF0F766E),
+    Color(0xFFB45309), Color(0xFFBE185D), Color(0xFF6D28D9),
+    Color(0xFF0369A1), Color(0xFF9333EA),
 )
 
 fun avatarColor(key: String): Color =
@@ -69,6 +74,54 @@ fun initials(name: String): String {
     }
 }
 
+/** The MeshLink monogram: three peers joined in a violet mesh. Drawn entirely
+ * with Compose primitives so no assets or fonts are needed. */
+@Composable
+fun MeshMark(size: Dp = 40.dp) {
+    val radius = size * 0.30f
+    Box(
+        modifier = Modifier
+            .size(size)
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(radius),
+                ambientColor = BrandViolet.copy(alpha = 0.5f),
+                spotColor = BrandDeep.copy(alpha = 0.45f),
+            )
+            .clip(RoundedCornerShape(radius))
+            .background(Brush.linearGradient(listOf(Color(0xFFA78BFA), BrandDeep)))
+            .border(
+                1.dp, Color.White.copy(alpha = 0.30f), RoundedCornerShape(radius),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(size * 0.58f)) {
+            val s = size.toPx() * 0.58f
+            val r = s * 0.095f
+            val stroke = s * 0.055f
+            val nodes = listOf(
+                Offset(s * 0.24f, s * 0.26f),
+                Offset(s * 0.76f, s * 0.26f),
+                Offset(s * 0.50f, s * 0.76f),
+            )
+            for (i in nodes.indices) {
+                for (j in i + 1 until nodes.size) {
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.9f),
+                        start = nodes[i],
+                        end = nodes[j],
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
+            nodes.forEach {
+                drawCircle(color = Color.White, radius = r, center = it)
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------------------- avatar
 
 @Composable
@@ -80,20 +133,27 @@ fun Avatar(
 ) {
     val base = avatarColor(name)
     val deep = Color(
-        red = base.red * 0.72f,
-        green = base.green * 0.72f,
-        blue = base.blue * 0.82f,
+        red = base.red * 0.65f,
+        green = base.green * 0.62f,
+        blue = base.blue * 0.80f,
         alpha = 1f,
     )
     Box(modifier = Modifier.size(size)) {
         Box(
             modifier = Modifier
                 .size(size)
+                .shadow(
+                    elevation = if (size >= 44.dp) 8.dp else 4.dp,
+                    shape = CircleShape,
+                    ambientColor = base.copy(alpha = 0.45f),
+                    spotColor = base.copy(alpha = 0.45f),
+                )
                 .clip(CircleShape)
-                .background(
-                    androidx.compose.ui.graphics.Brush.linearGradient(
-                        listOf(base, deep),
-                    ),
+                .background(Brush.linearGradient(listOf(base, deep)))
+                .border(
+                    width = 1.5.dp,
+                    color = Color.White.copy(alpha = 0.28f),
+                    shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -124,19 +184,59 @@ fun Avatar(
             }
         }
         if (showOnline) {
+            val pill = size * 0.30f
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(size * 0.28f)
+                    .size(pill + 6.dp)
                     .clip(CircleShape)
-                    .background(OnlineGreen)
-                    .border(
-                        width = 2.5.dp,
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = CircleShape,
-                    ),
-            )
+                    .background(Color(0xFF6EE7B7).copy(alpha = 0.28f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(pill)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(Color(0xFF6EE7B7), Color(0xFF2DD4BF))))
+                        .border(
+                            width = 2.dp,
+                            color = MeshTokens.palette.drawer,
+                            shape = CircleShape,
+                        ),
+                )
+            }
         }
+    }
+}
+
+/** Compact tinted label used for "Online", presence and card states. */
+@Composable
+fun StatusPill(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.14f))
+            .border(1.dp, color.copy(alpha = 0.32f), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -197,10 +297,19 @@ fun NewChatDialog(
 ) {
     var address by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    val tokens = MeshTokens.palette
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New chat") },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(26.dp),
+        title = {
+            Text(
+                "New chat",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        },
         text = {
             Column {
                 Text(
@@ -215,6 +324,7 @@ fun NewChatDialog(
                     onValueChange = { address = it },
                     label = { Text("UIN or phone number") },
                     singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -223,11 +333,17 @@ fun NewChatDialog(
                     onValueChange = { name = it },
                     label = { Text("Name (optional)") },
                     singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (contacts.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
-                    Text("Saved contacts", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Text(
+                        "Saved contacts",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = tokens.lilac,
+                    )
                     contacts.take(6).forEach { contact ->
                         Row(
                             modifier = Modifier
@@ -262,6 +378,7 @@ fun NewChatDialog(
 /** Quick info row used by the settings / radios screens. */
 @Composable
 fun InfoRow(title: String, subtitle: String, active: Boolean) {
+    val color = if (active) MeshTokens.palette.mint else MeshTokens.palette.coral
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -270,10 +387,18 @@ fun InfoRow(title: String, subtitle: String, active: Boolean) {
     ) {
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(22.dp)
                 .clip(CircleShape)
-                .background(if (active) OnlineGreen else Color(0xFFB3261E)),
-        )
+                .background(color.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.55f)))),
+            )
+        }
         Spacer(Modifier.width(12.dp))
         Column {
             Text(title, fontWeight = FontWeight.Medium, fontSize = 14.sp)

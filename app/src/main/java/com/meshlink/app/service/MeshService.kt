@@ -7,9 +7,13 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 import com.meshlink.app.MainActivity
 import com.meshlink.app.R
 import com.meshlink.app.data.Chat
@@ -27,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Tracks whether an activity is visible, so we only notify in the background. */
 object AppForeground {
@@ -54,7 +59,10 @@ class MeshService : Service() {
 
         const val ACTION_START = "com.meshlink.app.START_MESH"
         const val ACTION_STOP = "com.meshlink.app.STOP_MESH"
+        const val ACTION_REPLY = "com.meshlink.app.REPLY"
         const val EXTRA_UIN = "uin"
+        const val EXTRA_CHAT_ID = "chat_id"
+        private const val KEY_TEXT_REPLY = "meshlink_reply"
 
         @Volatile
         var engine: MeshEngine? = null
@@ -63,6 +71,9 @@ class MeshService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var retryJob: Job? = null
+    private val flushGate = AtomicBoolean(false)
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -103,15 +114,39 @@ class MeshService : Service() {
         mesh.start()
 
         retryJob = serviceScope.launch {
+            var ticks = 0
             while (true) {
-                delay(RETRY_INTERVAL_MS)
-                runCatching { ChatRepository.retryPending() }
+                delay(10_000L)
+                ticks++
+                runCatching { updateQueueNotification() }
+                if (ticks * 10_000L >= RETRY_INTERVAL_MS) {
+                    ticks = 0
+                    runCatching { ChatRepository.retryPending() }
+                }
             }
         }
+        registerConnectivityCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_REPLY -> {
+                val peer = intent.getStringExtra(EXTRA_CHAT_ID).orEmpty()
+                val reply = RemoteInput.getResultsFromIntent(intent)
+                    ?.getCharSequence(KEY_TEXT_REPLY)
+                    ?.toString()
+                    .orEmpty()
+                if (peer.isNotBlank() && reply.isNotBlank()) {
+                    val name = SessionStore.displayName(this)
+                    ChatRepository.sendText(peer, reply, name)
+                    ChatRepository.retryPending()
+                }
+                getSystemService(NotificationManager::class.java)
+                    ?.cancel(MESSAGE_NOTIFICATION_ID)
+                startForeground(NOTIFICATION_ID, buildNotification())
+                return START_NOT_STICKY
+            }
+
             ACTION_STOP -> {
                 engine?.stop()
                 CallManager.detach()
@@ -121,6 +156,8 @@ class MeshService : Service() {
             }
             else -> {
                 intent?.getStringExtra(EXTRA_UIN)?.let { engine?.configure(it) }
+                // App relaunched or service restarted: clear the queue right away.
+                ChatRepository.retryPending()
             }
         }
 
@@ -131,9 +168,61 @@ class MeshService : Service() {
     override fun onDestroy() {
         retryJob?.cancel()
         retryJob = null
+        runCatching {
+            networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) }
+        }
+        networkCallback = null
+        connectivityManager = null
         engine?.stop()
         engine = null
         super.onDestroy()
+    }
+
+    /**
+     * WhatsApp-style store-and-forward: the moment the phone gets a usable
+     * internet connection, kick the relay and flush every queued message.
+     * ChatRepository has its own gate, so the 45 s timer cannot double-send.
+     */
+    private fun registerConnectivityCallback() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        connectivityManager = manager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                flushQueue("network available")
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities,
+            ) {
+                val usable = networkCapabilities
+                    .hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    networkCapabilities
+                        .hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (usable) flushQueue("internet validated")
+            }
+        }
+        runCatching { manager.registerDefaultNetworkCallback(callback) }
+            .onFailure { android.util.Log.w("MeshService", "network callback failed", it) }
+        networkCallback = callback
+    }
+
+    private fun flushQueue(reason: String) {
+        if (!flushGate.compareAndSet(false, true)) return
+        serviceScope.launch {
+            try {
+                android.util.Log.d("MeshService", "Flushing queue: $reason")
+                delay(1_200)
+                // Give the relay a head start; a queued message must not wait
+                // for the next 45 s polling round.
+                engine?.restartOnline()
+                delay(1_000)
+                ChatRepository.retryPending()
+            } finally {
+                delay(2_000)
+                flushGate.set(false)
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -172,7 +261,9 @@ class MeshService : Service() {
         )
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(
+        text: String = getString(R.string.mesh_notification_text),
+    ): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -181,12 +272,24 @@ class MeshService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_MESH)
             .setContentTitle(getString(R.string.mesh_notification_title))
-            .setContentText(getString(R.string.mesh_notification_text))
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_meshlink_notification)
             .setOngoing(true)
             .setContentIntent(openApp)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    /** Shows how many messages are still waiting, even when the app is closed. */
+    private fun updateQueueNotification() {
+        val pending = ChatRepository.pendingCount()
+        val text = if (pending > 0) {
+            getString(R.string.mesh_notification_pending, pending)
+        } else {
+            getString(R.string.mesh_notification_text)
+        }
+        getSystemService(NotificationManager::class.java)
+            ?.notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     private fun notifyMessage(message: Message, chat: Chat) {
@@ -198,6 +301,24 @@ class MeshService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val replyLabel = getString(R.string.notification_reply)
+        val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
+            .setLabel(replyLabel)
+            .build()
+        val replyIntent = Intent(this, MeshService::class.java)
+            .setAction(ACTION_REPLY)
+            .putExtra(EXTRA_CHAT_ID, chat.peer)
+        val replyPending = PendingIntent.getService(
+            this,
+            chat.peer.hashCode(),
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        val replyAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_meshlink_notification,
+            replyLabel,
+            replyPending,
+        ).addRemoteInput(remoteInput).build()
         val notification = NotificationCompat.Builder(this, CHANNEL_MESSAGES)
             .setContentTitle(chat.name.ifBlank { chat.peer })
             .setContentText(message.body)
@@ -205,6 +326,7 @@ class MeshService : Service() {
             .setSmallIcon(R.drawable.ic_meshlink_notification)
             .setAutoCancel(true)
             .setContentIntent(open)
+            .addAction(replyAction)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         getSystemService(NotificationManager::class.java)

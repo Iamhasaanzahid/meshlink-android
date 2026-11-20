@@ -1,13 +1,28 @@
 package com.meshlink.app.mesh
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.meshlink.app.MainActivity
 import com.meshlink.app.data.SessionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +80,8 @@ import java.util.UUID
 object OnlineCallManager {
 
     private const val TAG = "MeshLinkOnline"
+    private const val CALL_CHANNEL_ID = "meshlink_online_calls"
+    private const val CALL_NOTIFICATION_ID = 1009
 
     enum class Phase {
         IDLE,
@@ -125,6 +142,13 @@ object OnlineCallManager {
     private var exportRunnable: Runnable? = null
     private var ringTimeout: Runnable? = null
     private var pendingOffer: String? = null
+    private var factoryInitialized = false
+    private var focusRequest: AudioFocusRequest? = null
+    private var ringtone: Ringtone? = null
+    private var vibrator: Vibrator? = null
+    /** ICE candidates that arrive before the remote description is installed. */
+    private val pendingIce = mutableListOf<IceCandidate>()
+    private var remoteDescriptionSet = false
 
     /**
      * Set by MeshService: publishes one WebRTC signalling message to
@@ -138,16 +162,38 @@ object OnlineCallManager {
         appContext = context.applicationContext
     }
 
+    private fun micGranted(): Boolean {
+        val ctx = appContext ?: return false
+        return ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    /** Signs a message, turning a missing relay into a visible failure. */
+    private fun signal(peer: String, message: String, critical: Boolean = false): Boolean {
+        val publish = sendSignal
+        if (publish == null) {
+            if (critical) fail("Call signalling is not ready. Wait for Online mode to connect.")
+            return false
+        }
+        val ok = runCatching { publish(peer, message); true }.getOrDefault(false)
+        if (!ok && critical) fail("Could not send call signalling. Check your internet connection.")
+        return ok
+    }
+
     // ------------------------------------------------------------------ setup
 
     private fun ensureFactory(): PeerConnectionFactory {
         factory?.let { return it }
         val ctx = context()
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(ctx)
-                .setEnableInternalTracer(false)
-                .createInitializationOptions()
-        )
+        if (!factoryInitialized) {
+            // WebRTC only accepts one global initialization per process.
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(ctx)
+                    .setEnableInternalTracer(false)
+                    .createInitializationOptions()
+            )
+            factoryInitialized = true
+        }
         val egl = EglBase.create()
         eglBase = egl
         val created = PeerConnectionFactory.builder()
@@ -213,7 +259,7 @@ object OnlineCallManager {
                     .put("mline", candidate.sdpMLineIndex)
                     .toString()
             }.getOrNull() ?: return
-            sendSignal?.invoke(s.peer, json)
+            signal(s.peer, json)
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
         override fun onAddStream(stream: MediaStream?) = Unit
@@ -230,6 +276,27 @@ object OnlineCallManager {
         }
     }
 
+    /**
+     * The caller can trickle ICE candidates before the callee has accepted the
+     * offer. WebRTC cannot install them yet, so keep them until the remote
+     * description is set instead of silently dropping the connection hints.
+     */
+    private fun queueOrAddIce(candidate: IceCandidate) {
+        val pc = peerConnection
+        if (pc == null || !remoteDescriptionSet) {
+            pendingIce.add(candidate)
+            return
+        }
+        runCatching { pc.addIceCandidate(candidate) }
+    }
+
+    private fun flushPendingIce() {
+        val pc = peerConnection ?: return
+        if (!remoteDescriptionSet) return
+        pendingIce.forEach { runCatching { pc.addIceCandidate(it) } }
+        pendingIce.clear()
+    }
+
     private fun newPeerConnection(video: Boolean = false): PeerConnection {
         val f = ensureFactory()
         val config = PeerConnection.RTCConfiguration(iceServers()).apply {
@@ -241,6 +308,7 @@ object OnlineCallManager {
         val pc = f.createPeerConnection(config, observer)
             ?: throw IllegalStateException("WebRTC could not start")
         peerConnection = pc
+        remoteDescriptionSet = false
 
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
@@ -327,6 +395,10 @@ object OnlineCallManager {
 
     /** Caller step 1: build an OFFER code that the other person pastes. */
     fun startAsCaller() {
+        if (!micGranted()) {
+            fail("Microphone permission is needed for a call. Allow it and try again.")
+            return
+        }
         reset(keepAudio = false)
         _state.value = Ui(phase = Phase.PREPARING, role = Role.CALLER)
         enterAudioMode()
@@ -358,6 +430,10 @@ object OnlineCallManager {
 
     /** Caller step 3: paste the ANSWER code from the other person. */
     fun acceptAnswerCode(code: String) {
+        if (!micGranted()) {
+            fail("Microphone permission is needed for a call. Allow it and try again.")
+            return
+        }
         val pc = peerConnection ?: run { fail("Start a call first"); return }
         val parsed = parseCode(code) ?: run { fail("That is not a MeshLink answer code"); return }
         if (parsed.type != SessionDescription.Type.ANSWER) {
@@ -366,7 +442,10 @@ object OnlineCallManager {
         }
         _state.value = _state.value.copy(phase = Phase.CONNECTING, remoteName = parsed.name, message = null)
         pc.setRemoteDescription(object : SdpObserver {
-            override fun onSetSuccess() = Unit
+            override fun onSetSuccess() {
+                remoteDescriptionSet = true
+                flushPendingIce()
+            }
             override fun onSetFailure(error: String?) = fail(error ?: "Could not use that answer code")
             override fun onCreateSuccess(desc: SessionDescription?) = Unit
             override fun onCreateFailure(error: String?) = Unit
@@ -377,6 +456,10 @@ object OnlineCallManager {
 
     /** Callee step 2: paste the caller's OFFER code and get an ANSWER code. */
     fun joinWithOfferCode(code: String) {
+        if (!micGranted()) {
+            fail("Microphone permission is needed for a call. Allow it and try again.")
+            return
+        }
         reset(keepAudio = false)
         val parsed = parseCode(code) ?: run { fail("That is not a MeshLink call code"); return }
         if (parsed.type != SessionDescription.Type.OFFER) {
@@ -393,6 +476,8 @@ object OnlineCallManager {
             val pc = newPeerConnection()
             pc.setRemoteDescription(object : SdpObserver {
                 override fun onSetSuccess() {
+                    remoteDescriptionSet = true
+                    flushPendingIce()
                     pc.createAnswer(object : SdpObserver {
                         override fun onCreateSuccess(desc: SessionDescription?) {
                             if (desc == null) {
@@ -433,6 +518,10 @@ object OnlineCallManager {
     fun startRelayedCall(peer: String, name: String, video: Boolean = false) {
         val target = peer.trim()
         if (target.isBlank()) return
+        if (!micGranted()) {
+            fail("Microphone permission is needed for a call. Allow it and try again.")
+            return
+        }
         reset(keepAudio = false)
         val id = UUID.randomUUID().toString().take(8)
         _state.value = Ui(
@@ -457,7 +546,7 @@ object OnlineCallManager {
                     pc.setLocalDescription(object : SdpObserver {
                         override fun onSetSuccess() {
                             val local = pc.localDescription ?: desc
-                            sendSignal?.invoke(target, offerJson(id, local))
+                            signal(target, offerJson(id, local), critical = true)
                         }
 
                         override fun onSetFailure(error: String?) =
@@ -489,6 +578,13 @@ object OnlineCallManager {
             fail("This call offer is no longer valid")
             return
         }
+        if (!micGranted()) {
+            signal(s.peer, simpleJson("reject", s.callId))
+            fail("Microphone permission is needed to answer. Allow it and try again.")
+            return
+        }
+        stopRinging()
+        cancelIncomingNotification()
         cancelRingTimeout()
         _state.value = s.copy(phase = Phase.CONNECTING, message = null)
         enterAudioMode()
@@ -497,6 +593,8 @@ object OnlineCallManager {
             val pc = newPeerConnection(s.video)
             pc.setRemoteDescription(object : SdpObserver {
                 override fun onSetSuccess() {
+                    remoteDescriptionSet = true
+                    flushPendingIce()
                     pc.createAnswer(object : SdpObserver {
                         override fun onCreateSuccess(desc: SessionDescription?) {
                             if (desc == null) {
@@ -506,7 +604,7 @@ object OnlineCallManager {
                             pc.setLocalDescription(object : SdpObserver {
                                 override fun onSetSuccess() {
                                     val local = pc.localDescription ?: desc
-                                    sendSignal?.invoke(s.peer, answerJson(s.callId, local))
+                                    signal(s.peer, answerJson(s.callId, local), critical = true)
                                 }
 
                                 override fun onSetFailure(error: String?) =
@@ -542,8 +640,11 @@ object OnlineCallManager {
         val s = _state.value
         if (s.phase != Phase.RINGING) return
         if (s.peer.isNotBlank() && s.callId.isNotBlank()) {
-            sendSignal?.invoke(s.peer, simpleJson("reject", s.callId))
+            signal(s.peer, simpleJson("reject", s.callId))
         }
+        stopRinging()
+        cancelIncomingNotification()
+        cancelRingTimeout()
         reset(keepAudio = false)
         _state.value = Ui(phase = Phase.ENDED)
     }
@@ -554,6 +655,7 @@ object OnlineCallManager {
             val json = runCatching { JSONObject(message) }.getOrNull() ?: return@post
             val action = json.optString("a")
             val id = json.optString("id")
+            if (id.isBlank()) return@post
             val current = _state.value
             when (action) {
                 "offer" -> {
@@ -561,30 +663,42 @@ object OnlineCallManager {
                         current.phase != Phase.ENDED &&
                         current.phase != Phase.FAILED
                     if (busy) {
-                        sendSignal?.invoke(from, simpleJson("reject", id))
+                        signal(from, simpleJson("reject", id))
                         return@post
                     }
-                    pendingOffer = json.optString("sdp")
+                    val sdp = json.optString("sdp")
+                    if (sdp.isBlank()) return@post
+                    // A second offer for the same (or a previous) call must not
+                    // restart the ringer on top of the current incoming call.
+                    stopRinging()
+                    pendingOffer = sdp
+                    val name = json.optString("n").ifBlank { from }
                     _state.value = Ui(
                         phase = Phase.RINGING,
                         role = Role.CALLEE,
-                        remoteName = json.optString("n").ifBlank { from },
+                        remoteName = name,
                         relayed = true,
                         peer = from,
                         callId = id,
                         video = json.optBoolean("video", false),
                     )
+                    startRinging()
+                    showIncomingNotification(name, from, json.optBoolean("video", false))
                     armRingTimeout(id)
                 }
 
                 "answer" -> {
                     if (current.callId != id || current.role != Role.CALLER) return@post
+                    if (current.phase != Phase.DIALING && current.phase != Phase.CONNECTING) return@post
                     val pc = peerConnection ?: return@post
                     val sdp = json.optString("sdp")
                     if (sdp.isBlank()) return@post
                     _state.value = current.copy(phase = Phase.CONNECTING, message = null)
                     pc.setRemoteDescription(object : SdpObserver {
-                        override fun onSetSuccess() = Unit
+                        override fun onSetSuccess() {
+                            remoteDescriptionSet = true
+                            flushPendingIce()
+                        }
                         override fun onSetFailure(error: String?) =
                             fail(error ?: "Could not connect the call")
 
@@ -595,22 +709,21 @@ object OnlineCallManager {
 
                 "ice" -> {
                     if (current.callId != id) return@post
-                    val pc = peerConnection ?: return@post
                     val cand = json.optString("cand")
                     if (cand.isBlank()) return@post
-                    runCatching {
-                        pc.addIceCandidate(
-                            IceCandidate(
-                                json.optString("mid"),
-                                json.optInt("mline"),
-                                cand,
-                            )
+                    queueOrAddIce(
+                        IceCandidate(
+                            json.optString("mid"),
+                            json.optInt("mline"),
+                            cand,
                         )
-                    }
+                    )
                 }
 
                 "reject" -> {
                     if (current.callId != id) return@post
+                    stopRinging()
+                    cancelIncomingNotification()
                     cancelRingTimeout()
                     reset(keepAudio = false)
                     _state.value = Ui(phase = Phase.FAILED, message = "Call declined")
@@ -618,12 +731,95 @@ object OnlineCallManager {
 
                 "hangup" -> {
                     if (current.callId != id) return@post
+                    stopRinging()
+                    cancelIncomingNotification()
                     cancelRingTimeout()
                     reset(keepAudio = false)
                     _state.value = Ui(phase = Phase.ENDED)
                 }
             }
         }
+    }
+
+    // --------------------------------------------------------------- ringing
+
+    private fun startRinging() {
+        val ctx = appContext ?: return
+        stopRinging()
+        runCatching {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            ringtone = RingtoneManager.getRingtone(ctx, uri)?.apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) isLooping = true
+                play()
+            }
+        }
+        runCatching {
+            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+            val v = vibrator
+            if (v != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 800), 0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v.vibrate(longArrayOf(0, 800, 800), 0)
+                }
+            }
+        }
+    }
+
+    private fun stopRinging() {
+        runCatching { ringtone?.stop() }
+        ringtone = null
+        runCatching { vibrator?.cancel() }
+        vibrator = null
+    }
+
+    /** Incoming internet calls need a notification too: the app may be closed. */
+    private fun showIncomingNotification(name: String, peer: String, video: Boolean) {
+        val ctx = appContext ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val manager = ctx.getSystemService(NotificationManager::class.java) ?: return
+                if (manager.getNotificationChannel(CALL_CHANNEL_ID) == null) {
+                    manager.createNotificationChannel(
+                        NotificationChannel(
+                            CALL_CHANNEL_ID,
+                            "Online calls",
+                            NotificationManager.IMPORTANCE_HIGH,
+                        ).apply { description = "Incoming MeshLink internet calls" }
+                    )
+                }
+            }
+            val intent = Intent(ctx, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            val pending = PendingIntent.getActivity(
+                ctx,
+                CALL_NOTIFICATION_ID,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val notification = NotificationCompat.Builder(ctx, CALL_CHANNEL_ID)
+                .setSmallIcon(ctx.applicationInfo.icon)
+                .setContentTitle(if (video) "Incoming video call" else "Incoming MeshLink call")
+                .setContentText(name.ifBlank { peer })
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOngoing(true)
+                .setContentIntent(pending)
+                .build()
+            NotificationManagerCompat.from(ctx).notify(CALL_NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun cancelIncomingNotification() {
+        val ctx = appContext ?: return
+        runCatching { NotificationManagerCompat.from(ctx).cancel(CALL_NOTIFICATION_ID) }
     }
 
     private fun offerJson(id: String, desc: SessionDescription): String =
@@ -733,28 +929,43 @@ object OnlineCallManager {
 
     fun toggleSpeaker() {
         val speaker = !_state.value.speakerOn
-        val am = context().getSystemService(AudioManager::class.java)
-        am?.isSpeakerphoneOn = speaker
+        appContext?.getSystemService(AudioManager::class.java)?.let { am ->
+            runCatching { am.isSpeakerphoneOn = speaker }
+        }
         _state.value = _state.value.copy(speakerOn = speaker)
     }
 
     fun hangup() {
         val s = _state.value
+        if (s.phase == Phase.ENDED || s.phase == Phase.FAILED) {
+            reset(keepAudio = false)
+            return
+        }
         if (s.relayed && s.peer.isNotBlank() && s.callId.isNotBlank()) {
-            sendSignal?.invoke(s.peer, simpleJson("hangup", s.callId))
+            signal(s.peer, simpleJson("hangup", s.callId))
         }
-        if (s.phase == Phase.CONNECTED && s.peer.isNotBlank()) {
-            com.meshlink.app.data.ChatRepository.logCall(
-                peer = s.peer,
-                name = s.remoteName,
-                outgoing = s.role == Role.CALLER,
-                missed = false,
-                transport = "ONLINE",
-                timestamp = System.currentTimeMillis(),
-                durationSec = s.seconds,
-                status = "COMPLETED",
-            )
+        if (s.peer.isNotBlank()) {
+            val status = when (s.phase) {
+                Phase.CONNECTED -> "COMPLETED"
+                Phase.RINGING -> if (s.role == Role.CALLEE) "MISSED" else "NO_ANSWER"
+                Phase.DIALING, Phase.CONNECTING, Phase.PREPARING -> "NO_ANSWER"
+                else -> ""
+            }
+            if (status.isNotEmpty()) {
+                com.meshlink.app.data.ChatRepository.logCall(
+                    peer = s.peer,
+                    name = s.remoteName,
+                    outgoing = s.role == Role.CALLER,
+                    missed = status == "MISSED" || (status == "NO_ANSWER" && s.role == Role.CALLER),
+                    transport = "ONLINE",
+                    timestamp = System.currentTimeMillis(),
+                    durationSec = s.seconds,
+                    status = status,
+                )
+            }
         }
+        stopRinging()
+        cancelIncomingNotification()
         cancelRingTimeout()
         reset(keepAudio = false)
         _state.value = Ui(phase = Phase.ENDED, relayed = s.relayed, remoteName = s.remoteName)
@@ -763,9 +974,14 @@ object OnlineCallManager {
     fun reset(keepAudio: Boolean = false) {
         timerJob?.cancel()
         timerJob = null
+        stopRinging()
+        cancelIncomingNotification()
         cancelExport()
         cancelRingTimeout()
+        unbindRenderers()
         pendingOffer = null
+        pendingIce.clear()
+        remoteDescriptionSet = false
         runCatching { audioTrack?.setEnabled(false) }
         runCatching { peerConnection?.close() }
         runCatching { peerConnection?.dispose() }
@@ -792,7 +1008,10 @@ object OnlineCallManager {
 
     private fun onConnected() {
         if (_state.value.phase == Phase.CONNECTED) return
+        if (_state.value.phase == Phase.ENDED || _state.value.phase == Phase.FAILED) return
         cancelRingTimeout()
+        stopRinging()
+        cancelIncomingNotification()
         _state.value = _state.value.copy(phase = Phase.CONNECTED, message = null, seconds = 0)
         timerJob?.cancel()
         timerJob = scope.launch {
@@ -807,23 +1026,37 @@ object OnlineCallManager {
 
     private fun fail(message: String) {
         Log.w(TAG, "online call failed: $message")
+        val s = _state.value
+        // Let the other phone leave its ringing screen instead of waiting for
+        // the 45 s timeout when setup fails on this side.
+        if (s.relayed && s.peer.isNotBlank() && s.callId.isNotBlank() &&
+            s.phase != Phase.ENDED && s.phase != Phase.FAILED
+        ) {
+            signal(s.peer, simpleJson("hangup", s.callId))
+        }
+        stopRinging()
+        cancelIncomingNotification()
         reset(keepAudio = false)
         _state.value = Ui(phase = Phase.FAILED, message = message)
     }
 
     private fun enterAudioMode() {
-        val am = context().getSystemService(AudioManager::class.java) ?: return
-        @Suppress("DEPRECATION")
-        am.mode = AudioManager.MODE_IN_COMMUNICATION
-        am.isSpeakerphoneOn = false
+        val am = appContext?.getSystemService(AudioManager::class.java) ?: return
+        runCatching {
+            @Suppress("DEPRECATION")
+            am.mode = AudioManager.MODE_IN_COMMUNICATION
+            am.isSpeakerphoneOn = false
+        }
         requestAudioFocus(am)
     }
 
     private fun leaveAudioMode() {
         val am = appContext?.getSystemService(AudioManager::class.java) ?: return
-        am.isSpeakerphoneOn = false
-        @Suppress("DEPRECATION")
-        am.mode = AudioManager.MODE_NORMAL
+        runCatching {
+            am.isSpeakerphoneOn = false
+            @Suppress("DEPRECATION")
+            am.mode = AudioManager.MODE_NORMAL
+        }
         abandonAudioFocus(am)
     }
 
@@ -837,7 +1070,12 @@ object OnlineCallManager {
                 val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                     .setAudioAttributes(attrs)
                     .build()
-                am.requestAudioFocus(request)
+                val result = am.requestAudioFocus(request)
+                // Android requires the same request instance when abandoning.
+                if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    focusRequest = request
+                }
+                Unit
             } else {
                 @Suppress("DEPRECATION")
                 am.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -848,18 +1086,12 @@ object OnlineCallManager {
     private fun abandonAudioFocus(am: AudioManager) {
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val attrs = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                    .setAudioAttributes(attrs)
-                    .build()
-                am.abandonAudioFocusRequest(request)
+                focusRequest?.let { am.abandonAudioFocusRequest(it) }
             } else {
                 @Suppress("DEPRECATION")
                 am.abandonAudioFocus(null)
             }
         }
+        focusRequest = null
     }
 }

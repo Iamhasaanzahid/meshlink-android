@@ -61,6 +61,9 @@ class MeshEngine(private val context: Context) {
         private const val ONLINE_FILE_CHUNK = 48 * 1024
         private const val MAX_ONLINE_CHUNKS = 512
         private const val MAX_ONLINE_FILE = 5 * 1024 * 1024L
+
+        /** Call signalling is QoS 1, so the broker may deliver it twice. */
+        private const val SIGNAL_DEDUPE_MS = 60 * 1000L
     }
 
     /** How many phones a frame may pass through before it is dropped. */
@@ -121,6 +124,10 @@ class MeshEngine(private val context: Context) {
 
     private val seen = LinkedHashMap<String, Long>()
     private val seenLock = Any()
+
+    /** Detects duplicate WebRTC offer/answer/ICE envelopes from QoS 1 MQTT. */
+    private val seenCallSignals = LinkedHashMap<String, Long>()
+    private val seenCallSignalsLock = Any()
 
     /** UIN -> time we last heard that phone on a local radio. */
     private val lastHeard = HashMap<String, Long>()
@@ -407,6 +414,26 @@ class MeshEngine(private val context: Context) {
     fun sendOnlineCallSignal(destination: String, json: String): Boolean =
         sendOnlineRaw(destination, (TAG_ONLINE_CALL + json).toByteArray(Charsets.UTF_8))
 
+    /**
+     * QoS 1 can replay a signalling message. A replayed "offer" would make the
+     * callee reject its own ringing call, so drop duplicates for a short window.
+     */
+    private fun isDuplicateCallSignal(from: String, bytes: ByteArray): Boolean {
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        val key = "$from:$fingerprint"
+        val now = System.currentTimeMillis()
+        synchronized(seenCallSignalsLock) {
+            val it = seenCallSignals.entries.iterator()
+            while (it.hasNext()) {
+                if (now - it.next().value > SIGNAL_DEDUPE_MS) it.remove()
+            }
+            if (seenCallSignals.containsKey(key)) return true
+            seenCallSignals[key] = now
+            return false
+        }
+    }
+
     // ---------------------------------------------------------------- sending
 
     /**
@@ -611,7 +638,10 @@ class MeshEngine(private val context: Context) {
         // Call signalling must fit in one 96-byte frame, so the id is short
         // and the display name is trimmed. The LAN IP lets the other phone
         // send voice straight back over the same Wi-Fi network.
-        val ip = localLanIp() ?: ""
+        // Only advertise a voice address when the Wi-Fi LAN transport is really
+        // running. A stale Wi-Fi IP would make the callee send audio to a dead
+        // address even though the call is travelling over Wi-Fi Direct.
+        val ip = if (lanActive) localLanIp().orEmpty() else ""
         var payload = JSONObject()
             .put("a", action)
             .put("id", callId.take(8))
@@ -990,10 +1020,12 @@ class MeshEngine(private val context: Context) {
                     return
                 }
                 TAG_ONLINE_CALL -> {
-                    onCallSignal?.invoke(
-                        fromAddress,
-                        String(bytes, 4, bytes.size - 4, Charsets.UTF_8),
-                    )
+                    if (!isDuplicateCallSignal(fromAddress, bytes)) {
+                        onCallSignal?.invoke(
+                            fromAddress,
+                            String(bytes, 4, bytes.size - 4, Charsets.UTF_8),
+                        )
+                    }
                     return
                 }
             }

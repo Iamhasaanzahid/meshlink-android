@@ -1,5 +1,9 @@
 package com.meshlink.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +24,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,16 +34,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.meshlink.app.mesh.CallManager
 import com.meshlink.app.mesh.CallPhase
 import com.meshlink.app.mesh.CallUiState
@@ -49,7 +57,17 @@ private val CallAccent = Color(0xFF6750A4)
 
 @Composable
 fun CallScreen(state: CallUiState) {
+    val context = LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var micGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> micGranted = granted }
     LaunchedEffect(Unit) {
         while (true) {
             now = System.currentTimeMillis()
@@ -58,9 +76,9 @@ fun CallScreen(state: CallUiState) {
     }
     val elapsed = if (state.connectedAt > 0) ((now - state.connectedAt) / 1000L).toInt() else 0
     val status = when (state.phase) {
-        CallPhase.DIALING -> "Ringing…"
-        CallPhase.RINGING -> "Incoming MeshLink call"
-        CallPhase.CONNECTING -> "Connecting…"
+        CallPhase.DIALING -> state.note.ifBlank { "Ringing…" }
+        CallPhase.RINGING -> state.note.ifBlank { "Incoming MeshLink call" }
+        CallPhase.CONNECTING -> state.note.ifBlank { "Connecting…" }
         CallPhase.ACTIVE -> formatDuration(elapsed)
         CallPhase.ENDED -> state.note.ifBlank { "Call ended" }
         CallPhase.IDLE -> ""
@@ -90,6 +108,19 @@ fun CallScreen(state: CallUiState) {
                 fontSize = 15.sp,
             )
             Spacer(Modifier.height(8.dp))
+            if (!micGranted && state.phase != CallPhase.IDLE) {
+                Text(
+                    "Microphone access is off. Calls need it for voice.",
+                    color = Color(0xFFFFB4AB),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(6.dp))
+                Button(onClick = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
+                    Text("Grant microphone")
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -107,7 +138,19 @@ fun CallScreen(state: CallUiState) {
 
             Spacer(Modifier.weight(1f))
 
-            if (state.phase == CallPhase.RINGING) {
+            if (state.phase == CallPhase.ENDED) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    CallAction(
+                        icon = Icons.Filled.Close,
+                        label = "Close",
+                        background = Color(0xFF322B3D),
+                        onClick = { CallManager.clearEnded() },
+                    )
+                }
+            } else if (state.phase == CallPhase.RINGING) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,

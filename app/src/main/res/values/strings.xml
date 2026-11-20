@@ -17,4 +17,6 @@
     <string name="mesh_channel_description">Keeps Bluetooth, Wi-Fi Direct and radio (SMS) mesh active</string>
     <string name="mesh_notification_title">MeshLink is connected</string>
     <string name="mesh_notification_text">Listening on radio, Bluetooth and Wi-Fi Direct</string>
+    <string name="mesh_notification_pending">%1$d message(s) waiting for connection</string>
+    <string name="notification_reply">Reply</string>
 </resources>

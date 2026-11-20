@@ -120,6 +120,11 @@ object CallManager {
         }
     }
 
+    /** Clears the short-lived "ended / failed" banner shown by the call UI. */
+    private val clearEnded = Runnable {
+        if (_state.value.phase == CallPhase.ENDED) _state.value = CallUiState()
+    }
+
     // ------------------------------------------------------------- lifecycle
 
     fun attach(context: Context, mesh: MeshEngine) {
@@ -129,20 +134,37 @@ object CallManager {
     }
 
     fun detach() {
+        if (_state.value.phase != CallPhase.IDLE && _state.value.phase != CallPhase.ENDED) {
+            finish("FAILED", "Call service stopped")
+        }
+        engine?.onControl = null
         engine = null
     }
 
     /** Place an outgoing call over the mesh. Returns false when offline. */
     fun placeCall(peer: String, name: String): Boolean {
-        val mesh = engine ?: return false
-        val ctx = appContext ?: return false
-        if (_state.value.phase != CallPhase.IDLE) return false
+        val phase = _state.value.phase
+        if (phase != CallPhase.IDLE && phase != CallPhase.ENDED) return false
+        val mesh = engine
+        val ctx = appContext
+        if (mesh == null || ctx == null) {
+            showFailure("The call service is still starting. Try again in a moment.", peer, name)
+            return false
+        }
+        if (!micGranted()) {
+            showFailure("Microphone permission is needed for a call. Allow it and try again.", peer, name)
+            return false
+        }
         // A call needs some direct Wi-Fi path: either a Wi-Fi Direct group or
         // both phones on the same Wi-Fi network / hotspot.
         val overLan = mesh.lanIsActive && !mesh.localLanIp().isNullOrBlank()
-        if (!mesh.wifiHasGroup && !overLan) return false
+        if (!mesh.wifiHasGroup && !overLan) {
+            showFailure("No nearby call path. Move closer, or connect both phones to the same Wi-Fi.", peer, name)
+            return false
+        }
 
         peerAudioIp = null
+        ended = false
         val id = UUID.randomUUID().toString().take(8)
         _state.value = CallUiState(
             id = id,
@@ -153,9 +175,11 @@ object CallManager {
             note = if (overLan) "Calling over Wi-Fi…" else "Calling over Wi-Fi Direct…",
             transport = if (overLan) "Wi-Fi" else "Wi-Fi Direct",
         )
-        val sent = mesh.sendControl(peer, "invite", id, SessionStore.displayName(ctx))
+        val sent = runCatching {
+            mesh.sendControl(peer, "invite", id, SessionStore.displayName(ctx))
+        }.getOrDefault(false)
         if (!sent) {
-            _state.value = CallUiState()
+            showFailure("Could not reach $peer over the local network.", peer, name)
             return false
         }
         scheduleTimeout()
@@ -166,6 +190,11 @@ object CallManager {
     fun accept() {
         val s = _state.value
         if (s.phase != CallPhase.RINGING) return
+        if (!micGranted()) {
+            engine?.sendControl(s.peer, "reject", s.id, nameForUs())
+            finish("FAILED", "Microphone permission is needed to answer", missed = true)
+            return
+        }
         stopRinging()
         engine?.sendControl(s.peer, "accept", s.id, nameForUs())
         _state.value = s.copy(phase = CallPhase.CONNECTING, note = "Connecting…")
@@ -194,11 +223,14 @@ object CallManager {
     }
 
     fun toggleMute() {
+        if (!callIsLive()) return
         muted = !muted
         _state.value = _state.value.copy(muted = muted)
     }
 
     fun toggleSpeaker() {
+        // Never leave the speakerphone on after a call has ended.
+        if (!callIsLive()) return
         val on = !_state.value.speakerOn
         _state.value = _state.value.copy(speakerOn = on)
         audioManager()?.let { am ->
@@ -207,7 +239,40 @@ object CallManager {
     }
 
     fun clearEnded() {
+        handler.removeCallbacks(clearEnded)
         if (_state.value.phase == CallPhase.ENDED) _state.value = CallUiState()
+    }
+
+    private fun callIsLive(): Boolean = when (_state.value.phase) {
+        CallPhase.DIALING, CallPhase.RINGING, CallPhase.CONNECTING, CallPhase.ACTIVE -> true
+        else -> false
+    }
+
+    private fun micGranted(): Boolean {
+        val ctx = appContext ?: return false
+        return ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * A call could not even start: show the reason inside the full-screen call
+     * UI instead of silently returning false and leaving the user guessing.
+     */
+    private fun showFailure(message: String, peer: String, name: String, outgoing: Boolean = true) {
+        ended = true
+        active = false
+        muted = false
+        handler.removeCallbacks(timeout)
+        handler.removeCallbacks(clearEnded)
+        stopRinging()
+        _state.value = CallUiState(
+            peer = peer,
+            name = name.ifBlank { peer },
+            outgoing = outgoing,
+            phase = CallPhase.ENDED,
+            note = message,
+        )
+        handler.postDelayed(clearEnded, 4_000)
     }
 
     // ------------------------------------------------------------- signalling
@@ -216,11 +281,28 @@ object CallManager {
         val s = _state.value
         when (action) {
             "invite" -> {
-                peerAudioIp = peerIp.takeIf { it.isNotBlank() }
-                if (s.phase != CallPhase.IDLE) {
+                // ENDED is a short-lived banner, not a busy call.
+                if (s.phase != CallPhase.IDLE && s.phase != CallPhase.ENDED) {
                     engine?.sendControl(from, "reject", callId, nameForUs())
                     return
                 }
+                if (!micGranted()) {
+                    // Do not ring for a call we cannot answer: tell the caller
+                    // and show a visible reason on this phone too.
+                    engine?.sendControl(from, "reject", callId, nameForUs())
+                    showFailure(
+                        "Missed call: microphone permission is needed. Allow it and try again.",
+                        from,
+                        name,
+                        outgoing = false,
+                    )
+                    return
+                }
+                // Only copy the peer's audio address once we accept the invite,
+                // otherwise a late/duplicate invite could overwrite the IP of
+                // the call that is already in progress.
+                peerAudioIp = peerIp.takeIf { it.isNotBlank() }
+                ended = false
                 val peerName = ChatRepository.contactName(from)
                     ?: name.ifBlank { from }
                 val state = CallUiState(
@@ -265,6 +347,10 @@ object CallManager {
     // ----------------------------------------------------------------- audio
 
     private fun openAudio() {
+        // A hangup can happen while the user is tapping Accept. Do not resurrect
+        // sockets or audio for a call that is no longer connecting.
+        if (ended || _state.value.phase != CallPhase.CONNECTING) return
+
         // Same Wi-Fi network: plain UDP in both directions. The IP came over
         // the call signalling, so no Wi-Fi Direct group is needed.
         val lanIp = peerAudioIp
@@ -273,10 +359,16 @@ object CallManager {
             return
         }
 
-        val mesh = engine ?: return
+        val mesh = engine ?: run {
+            finish("FAILED", "Call service is no longer running")
+            return
+        }
         val host = mesh.wifiIsGroupOwner
         val ownerIp = mesh.wifiGroupOwnerIp
-        ended = false
+        if (!host && ownerIp.isNullOrBlank()) {
+            finish("FAILED", "Wi-Fi Direct group is not ready. Try the call again in a moment.")
+            return
+        }
 
         thread(name = "meshlink-call-audio", isDaemon = true) {
             try {
@@ -288,7 +380,7 @@ object CallManager {
                 } else {
                     connectWithRetry(ownerIp)
                 }
-                if (ended) {
+                if (ended || _state.value.phase != CallPhase.CONNECTING || appContext == null) {
                     runCatching { s.close() }
                     return@thread
                 }
@@ -300,16 +392,29 @@ object CallManager {
                 startPlayback()
                 startMic()
                 startReader()
-                _state.value = _state.value.copy(
-                    phase = CallPhase.ACTIVE,
-                    connectedAt = System.currentTimeMillis(),
-                    note = "",
-                )
+                markActive()
             } catch (t: Throwable) {
                 Log.w(TAG, "audio link failed", t)
-                if (!ended) finish("FAILED", "Audio link failed: ${t.message ?: "radio busy"}")
+                if (!ended) {
+                    finish(
+                        "FAILED",
+                        if (t.message.isNullOrBlank()) "Audio link failed: radio busy"
+                        else "Audio link failed: ${t.message}",
+                    )
+                }
             }
         }
+    }
+
+    /** Moves CONNECTING -> ACTIVE only while this call is still the live one. */
+    private fun markActive() {
+        val s = _state.value
+        if (ended || s.phase != CallPhase.CONNECTING) return
+        _state.value = s.copy(
+            phase = CallPhase.ACTIVE,
+            connectedAt = System.currentTimeMillis(),
+            note = "",
+        )
     }
 
     /**
@@ -319,12 +424,12 @@ object CallManager {
      * address. No handshake, no server: the first packet is the handshake.
      */
     private fun openLanAudio(peerIp: String) {
-        ended = false
         prepareAudio()
         _state.value = _state.value.copy(phase = CallPhase.CONNECTING, note = "Connecting…")
 
         thread(name = "meshlink-call-lan", isDaemon = true) {
             try {
+                if (ended || _state.value.phase != CallPhase.CONNECTING) return@thread
                 val sock = DatagramSocket(null).apply {
                     reuseAddress = true
                     bind(InetSocketAddress(AUDIO_PORT))
@@ -390,11 +495,7 @@ object CallManager {
                         if (first) {
                             first = false
                             active = true
-                            _state.value = _state.value.copy(
-                                phase = CallPhase.ACTIVE,
-                                connectedAt = System.currentTimeMillis(),
-                                note = "",
-                            )
+                            markActive()
                         }
                     }
                 } catch (t: SocketTimeoutException) {
@@ -590,11 +691,14 @@ object CallManager {
 
     // ---------------------------------------------------------------- finish
 
+    @Synchronized
     private fun finish(status: String, note: String, missed: Boolean = false) {
-        if (ended && _state.value.phase == CallPhase.ENDED) return
+        if (ended) return
         ended = true
         active = false
+        muted = false
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(clearEnded)
         val s = _state.value
 
         stopRinging()
@@ -617,11 +721,9 @@ object CallManager {
             )
         }
 
-        _state.value = s.copy(phase = CallPhase.ENDED, note = note)
+        _state.value = s.copy(phase = CallPhase.ENDED, note = note, muted = false, speakerOn = true)
         onCallEnded?.invoke()
-        handler.postDelayed({
-            if (_state.value.phase == CallPhase.ENDED) _state.value = CallUiState()
-        }, 1_500)
+        handler.postDelayed(clearEnded, 2_500)
     }
 
     private fun closeAudio() {

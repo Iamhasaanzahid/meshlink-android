@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="mesh_purple">#6750A4</color>
-    <color name="mesh_purple_light">#EADDFF</color>
-    <color name="mesh_purple_dark">#381E72</color>
-    <color name="mesh_background">#FEF7FF</color>
+    <!-- Kept for the adaptive launcher icon. -->
+    <color name="mesh_purple">#7C3AED</color>
+    <color name="mesh_purple_light">#E4D9FF</color>
+    <color name="mesh_purple_dark">#5B21B6</color>
+    <color name="mesh_background">#F5F1FF</color>
+
+    <!-- Premium identity tokens used by the window theme before Compose paints. -->
+    <color name="mesh_violet">#7C3AED</color>
+    <color name="mesh_violet_deep">#5B21B6</color>
+    <color name="mesh_dark_bg">#0B0716</color>
+    <color name="mesh_dark_surface">#17102B</color>
+    <color name="mesh_light_bg">#F5F1FF</color>
+    <color name="mesh_mint">#6EE7B7</color>
+    <color name="mesh_coral">#FDA4AF</color>
+    <color name="mesh_amber">#FCD34D</color>
+    <color name="mesh_sky">#7DD3FC</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

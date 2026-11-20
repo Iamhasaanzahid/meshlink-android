@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Single source of truth for chats, messages, calls and contacts.
@@ -31,6 +32,9 @@ object ChatRepository {
     private var initialised = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Prevents the 45 s loop, network callback and UI resume from flushing twice. */
+    private val retryGate = AtomicBoolean(false)
 
     private val _chats = MutableStateFlow<List<Chat>>(emptyList())
     val chats: StateFlow<List<Chat>> = _chats.asStateFlow()
@@ -444,6 +448,19 @@ object ChatRepository {
         }
     }
 
+    /** Number of outgoing messages still waiting for a radio or the internet. */
+    fun pendingCount(): Int {
+        if (!initialised) return 0
+        return runCatching {
+            val since = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+            db.readableDatabase.rawQuery(
+                "SELECT COUNT(*) FROM messages WHERE from_me = 1 AND ts >= ? " +
+                    "AND status IN (?, ?)",
+                arrayOf(since.toString(), MsgStatus.FAILED.name, MsgStatus.SENDING.name),
+            ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        }.getOrDefault(0)
+    }
+
     /**
      * Store-and-forward: tries again for messages that were handed to no
      * radio, or that were sent but never acknowledged. Called periodically by
@@ -455,52 +472,68 @@ object ChatRepository {
      * retry.
      */
     fun retryPending() {
+        // One flush at a time: the 45 s loop, a network callback and onResume
+        // can all fire together, but a message must only be published once.
+        if (!retryGate.compareAndSet(false, true)) return
         scope.launch {
-            // A database problem here must never take the whole app down; the
-            // loop runs every 45 seconds in the background.
-            runCatching { retryPendingNow() }
-                .onFailure { android.util.Log.w("MeshLinkRepo", "retryPending failed", it) }
+            try {
+                // A database problem here must never take the whole app down.
+                runCatching { retryPendingNow() }
+                    .onFailure { android.util.Log.w("MeshLinkRepo", "retryPending failed", it) }
+            } finally {
+                retryGate.set(false)
+            }
         }
     }
 
     private fun retryPendingNow() {
-            val pending = ArrayList<Message>()
-            val since = System.currentTimeMillis() - 1000L * 60 * 60 * 24
-            db.readableDatabase.rawQuery(
-                "SELECT id, chat_id, body, ts, kind, media_path, media_mime, media_name, media_size " +
-                    "FROM messages " +
-                    "WHERE from_me = 1 AND ts >= ? AND " +
-                    "status IN (?, ?) " +
-                    "ORDER BY ts LIMIT 30",
-                arrayOf(since.toString(), MsgStatus.FAILED.name, MsgStatus.SENDING.name),
-            ).use { c ->
-                while (c.moveToNext()) {
-                    pending += Message(
-                        id = c.getString(0),
-                        chatId = c.getString(1),
-                        fromMe = true,
-                        body = c.getString(2),
-                        timestamp = c.getLong(3),
-                        transport = "AUTO",
-                        status = MsgStatus.SENT,
-                        kind = runCatching { MsgKind.valueOf(c.getString(4)) }
-                            .getOrDefault(MsgKind.TEXT),
-                        mediaPath = c.getString(5),
-                        mediaMime = c.getString(6) ?: "",
-                        mediaName = c.getString(7) ?: "",
-                        mediaSize = c.getLong(8),
-                    )
-                }
+        val pending = ArrayList<Message>()
+        val since = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        db.readableDatabase.rawQuery(
+            "SELECT id, chat_id, body, ts, kind, media_path, media_mime, media_name, media_size " +
+                "FROM messages " +
+                "WHERE from_me = 1 AND ts >= ? AND " +
+                "status IN (?, ?) " +
+                "ORDER BY ts LIMIT 100",
+            arrayOf(since.toString(), MsgStatus.FAILED.name, MsgStatus.SENDING.name),
+        ).use { c ->
+            while (c.moveToNext()) {
+                pending += Message(
+                    id = c.getString(0),
+                    chatId = c.getString(1),
+                    fromMe = true,
+                    body = c.getString(2),
+                    timestamp = c.getLong(3),
+                    transport = "AUTO",
+                    status = MsgStatus.SENT,
+                    kind = runCatching { MsgKind.valueOf(c.getString(4)) }
+                        .getOrDefault(MsgKind.TEXT),
+                    mediaPath = c.getString(5),
+                    mediaMime = c.getString(6) ?: "",
+                    mediaName = c.getString(7) ?: "",
+                    mediaSize = c.getLong(8),
+                )
             }
-            if (pending.isEmpty()) return
-            updateStatusBulk(pending.map { it.id }, MsgStatus.SENDING)
-            for (m in pending) {
-                dispatch(m, allowSms = false)
+        }
+        if (pending.isEmpty()) return
+        updateStatusBulk(pending.map { it.id }, MsgStatus.SENDING)
+        for (m in pending) {
+            // Group messages need their wire envelope on every retry, exactly
+            // like the original send, otherwise peers silently drop them.
+            val outgoing = if (m.chatId.startsWith("GRP-")) {
+                val group = GroupStore.get(m.chatId)
+                val sender = appContext?.let { SessionStore.displayName(it) }
+                    ?.takeIf { it.isNotBlank() } ?: m.chatId
+                m.copy(body = "MLG1|${m.chatId}|${group?.name ?: "Group"}|$sender|${m.body}")
+            } else {
+                m
             }
-            pending.map { it.chatId }.distinct().forEach {
-                refreshMessages(it)
-                refreshChats()
-            }
+            dispatch(outgoing, allowSms = false)
+        }
+        pending.map { it.chatId }.distinct().forEach {
+            refreshMessages(it)
+            refreshChats()
+        }
     }
 
     private fun updateStatusBulk(ids: List<String>, status: MsgStatus) {
@@ -516,7 +549,7 @@ object ChatRepository {
 
     private fun dispatch(message: Message, allowSms: Boolean = true) {
         if (message.kind != MsgKind.TEXT) {
-            dispatchMedia(message)
+            if (GroupStore.isGroup(message.chatId)) dispatchGroupMedia(message) else dispatchMedia(message)
             return
         }
         val engine = MeshService.engine

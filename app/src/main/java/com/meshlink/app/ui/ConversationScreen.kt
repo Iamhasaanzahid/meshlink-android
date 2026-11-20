@@ -13,6 +13,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,6 +67,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,6 +87,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -120,6 +124,7 @@ fun ConversationScreen(
     onVideoCall: (peer: String, name: String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
+    val tokens = MeshTokens.palette
     val scope = rememberCoroutineScope()
     val messages by ChatRepository.messagesFor(chat.peer).collectAsState()
     val allChats by ChatRepository.chats.collectAsState()
@@ -343,10 +348,26 @@ fun ConversationScreen(
     Scaffold(
         topBar = {
             Box(
-                modifier = Modifier.background(
-                    Brush.verticalGradient(listOf(BrandViolet, BrandDeep)),
-                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(tokens.headerStart, tokens.headerMid, tokens.headerEnd),
+                        ),
+                    ),
             ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 30.dp, y = (-40).dp)
+                        .size(180.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(Color.White.copy(alpha = 0.2f), Color.Transparent),
+                            ),
+                        ),
+                )
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -385,8 +406,9 @@ fun ConversationScreen(
                         onClick = { onCall(chat.peer, chatTitle(chat)) },
                         modifier = Modifier
                             .padding(end = 4.dp)
-                            .size(40.dp)
-                            .background(Color.White.copy(alpha = 0.16f), CircleShape),
+                            .size(48.dp)
+                            .background(Color.White.copy(alpha = 0.16f), CircleShape)
+                            .border(1.dp, Color.White.copy(alpha = 0.26f), CircleShape),
                     ) {
                         Icon(
                             Icons.Filled.Call,
@@ -430,13 +452,21 @@ fun ConversationScreen(
             }
         },
         bottomBar = {
-            Surface(tonalElevation = 3.dp) {
+            Surface(
+                color = tokens.composerBar,
+                tonalElevation = 0.dp,
+                shadowElevation = 18.dp,
+            ) {
                 Column {
                     if (replyTo != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(tokens.statusPill)
+                                .border(1.dp, tokens.hairline, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
@@ -459,96 +489,179 @@ fun ConversationScreen(
                         }
                     }
                     Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Box {
-                        IconButton(onClick = { attachOpen = true }) {
-                            Icon(
-                                Icons.Filled.AttachFile,
-                                contentDescription = "Attach",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = attachOpen,
-                            onDismissRequest = { attachOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Photo from gallery") },
-                                leadingIcon = { Icon(Icons.Filled.Photo, null) },
-                                onClick = {
-                                    attachOpen = false
-                                    galleryLauncher.launch(
-                                        PickVisualMediaRequest(
-                                            ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                        ),
-                                    )
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Take photo") },
-                                leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) },
-                                onClick = { attachOpen = false; startCamera() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Document") },
-                                leadingIcon = { Icon(Icons.Filled.Description, null) },
-                                onClick = {
-                                    attachOpen = false
-                                    documentLauncher.launch("*/*")
-                                },
-                            )
-                        }
-                    }
-                    if (recording) {
-                        Text(
-                            "● ${"%d:%02d".format(recordSeconds / 60, recordSeconds % 60)}",
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 8.dp),
-                        )
-                        IconButton(onClick = { stopVoice(send = false) }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Cancel recording")
-                        }
-                        FilledIconButton(
-                            onClick = { stopVoice(send = true) },
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(Icons.Filled.Stop, contentDescription = "Send voice message")
-                        }
-                    } else {
-                        OutlinedTextField(
-                            value = text,
-                            onValueChange = { text = it; pushTyping(it.isNotBlank()) },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text("Message") },
-                            shape = RoundedCornerShape(24.dp),
-                            maxLines = 4,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        if (text.isBlank()) {
-                            FilledIconButton(
-                                onClick = { startVoice() },
-                                modifier = Modifier.size(48.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Box {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(tokens.composerPill)
+                                    .border(1.dp, tokens.hairline, CircleShape),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Icon(Icons.Filled.Mic, contentDescription = "Record voice message")
+                                IconButton(onClick = { attachOpen = true }) {
+                                    Icon(
+                                        Icons.Filled.AttachFile,
+                                        contentDescription = "Attach",
+                                        tint = tokens.violet,
+                                    )
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = attachOpen,
+                                onDismissRequest = { attachOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Photo from gallery") },
+                                    leadingIcon = { Icon(Icons.Filled.Photo, null) },
+                                    onClick = {
+                                        attachOpen = false
+                                        galleryLauncher.launch(
+                                            PickVisualMediaRequest(
+                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                            ),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Take photo") },
+                                    leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) },
+                                    onClick = { attachOpen = false; startCamera() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Document") },
+                                    leadingIcon = { Icon(Icons.Filled.Description, null) },
+                                    onClick = {
+                                        attachOpen = false
+                                        documentLauncher.launch("*/*")
+                                    },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        if (recording) {
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(tokens.coral.copy(alpha = 0.14f))
+                                    .border(
+                                        1.dp, tokens.coral.copy(alpha = 0.5f),
+                                        RoundedCornerShape(24.dp),
+                                    )
+                                    .padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "● ${"%d:%02d".format(recordSeconds / 60, recordSeconds % 60)}",
+                                    color = tokens.coral,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                                )
+                                IconButton(
+                                    onClick = { stopVoice(send = false) },
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Cancel recording",
+                                        tint = tokens.coral,
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(tokens.coral, tokens.violet),
+                                            ),
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    IconButton(
+                                        onClick = { stopVoice(send = true) },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Stop,
+                                            contentDescription = "Send voice message",
+                                            tint = Color.White,
+                                        )
+                                    }
+                                }
                             }
                         } else {
-                            FilledIconButton(
-                                onClick = {
-                                    sendComposed()
-                                },
-                                modifier = Modifier.size(48.dp),
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(26.dp))
+                                    .background(tokens.composerPill)
+                                    .border(1.dp, tokens.hairline, RoundedCornerShape(26.dp)),
                             ) {
-                                Icon(Icons.Filled.Send, contentDescription = "Send")
+                                OutlinedTextField(
+                                    value = text,
+                                    onValueChange = { text = it; pushTyping(it.isNotBlank()) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("Message") },
+                                    shape = RoundedCornerShape(24.dp),
+                                    maxLines = 4,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        disabledContainerColor = Color.Transparent,
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent,
+                                        disabledBorderColor = Color.Transparent,
+                                    ),
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            if (text.isBlank()) {
+                                                listOf(tokens.statusPill, tokens.statusPill)
+                                            } else {
+                                                listOf(tokens.violet, tokens.lilac)
+                                            },
+                                        ),
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (text.isBlank()) {
+                                    IconButton(
+                                        onClick = { startVoice() },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Mic,
+                                            contentDescription = "Record voice message",
+                                            tint = tokens.violet,
+                                        )
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = { sendComposed() },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Send,
+                                            contentDescription = "Send",
+                                            tint = Color.White,
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
                     }
                 }
             }
@@ -556,7 +669,10 @@ fun ConversationScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
         if (searchOpen) {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
+            Surface(
+                color = tokens.composerPill,
+                shadowElevation = 6.dp,
+            ) {
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
@@ -610,19 +726,34 @@ fun ConversationScreen(
                 }
             }
         }
-        LazyColumn(
-            state = listState,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
                 .background(
                     Brush.verticalGradient(
-                        listOf(ChatBackground, Color(0xFFE7DFF7)),
+                        listOf(tokens.canvasStart, tokens.canvasEnd),
                     ),
                 ),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-120).dp)
+                    .size(340.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(tokens.glow.copy(alpha = 0.13f), Color.Transparent),
+                        ),
+                    ),
+            )
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
             if (messages.isEmpty()) {
                 item {
                     Column(
@@ -631,12 +762,23 @@ fun ConversationScreen(
                             .padding(top = 60.dp, start = 24.dp, end = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(
-                            "Messages travel phone to phone over radio:\n" +
-                                "Wi-Fi Direct → Bluetooth LE → SMS.\nNo internet needed.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = tokens.statusPill,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp, tokens.hairline,
+                            ),
+                        ) {
+                            Text(
+                                "Messages travel phone to phone over radio:\n" +
+                                    "Wi-Fi Direct → Bluetooth LE → SMS.\nNo internet needed.",
+                                fontSize = 12.sp,
+                                lineHeight = 19.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -652,13 +794,19 @@ fun ConversationScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFE1D5EC),
+                                shape = RoundedCornerShape(50),
+                                color = tokens.dateChip,
+                                shadowElevation = 4.dp,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp, tokens.hairline,
+                                ),
                             ) {
                                 Text(
                                     formatDateSeparator(message.timestamp),
                                     fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                                 )
                             }
                         }
@@ -672,6 +820,7 @@ fun ConversationScreen(
                         onLongPress = { selectedMessage = message },
                     )
                 }
+            }
             }
         }
         }
@@ -912,8 +1061,16 @@ private fun MessageBubble(
     onLongPress: () -> Unit,
 ) {
     val context = LocalContext.current
+    val tokens = MeshTokens.palette
+    val failed = message.status == MsgStatus.FAILED
+    val bubbleColors = when {
+        highlighted -> listOf(Color(0xFFFDE68A), Color(0xFFFCD34D))
+        message.fromMe -> listOf(tokens.outgoingStart, tokens.outgoingEnd)
+        else -> listOf(tokens.incomingStart, tokens.incomingEnd)
+    }
+    val onBubble = if (message.fromMe) Color.White else tokens.incomingText
     val bubbleShape = RoundedCornerShape(
-        topStart = 16.dp,
+        topStart = 18.dp,
         topEnd = 16.dp,
         bottomStart = if (message.fromMe) 16.dp else 4.dp,
         bottomEnd = if (message.fromMe) 4.dp else 16.dp,
@@ -925,11 +1082,20 @@ private fun MessageBubble(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 300.dp)
+                .widthIn(max = 310.dp)
+                .shadow(
+                    elevation = 10.dp,
+                    shape = bubbleShape,
+                    ambientColor = (if (message.fromMe) tokens.violet else Color.Black)
+                        .copy(alpha = 0.26f),
+                    spotColor = tokens.violet.copy(alpha = 0.18f),
+                )
                 .clip(bubbleShape)
-                .background(
-                    if (highlighted) Color(0xFFFFF0A6)
-                    else if (message.fromMe) OutgoingBubble else IncomingBubble,
+                .background(Brush.linearGradient(bubbleColors))
+                .border(
+                    width = if (failed) 1.5.dp else 1.dp,
+                    color = if (failed) tokens.coral else tokens.hairline,
+                    shape = bubbleShape,
                 )
                 .combinedClickable(
                     onClick = { if (message.status == MsgStatus.FAILED) onRetry() },
@@ -976,7 +1142,7 @@ private fun MessageBubble(
                             Icons.Filled.Description,
                             contentDescription = null,
                             tint = if (message.fromMe) Color.White
-                            else MaterialTheme.colorScheme.primary,
+                            else tokens.violet,
                             modifier = Modifier.size(36.dp),
                         )
                         Spacer(Modifier.width(8.dp))
@@ -985,7 +1151,7 @@ private fun MessageBubble(
                                 message.mediaName.ifBlank { "Document" },
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (message.fromMe) Color.White else Color(0xFF1D1B20),
+                                color = onBubble,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1002,7 +1168,8 @@ private fun MessageBubble(
                 else -> Text(
                     text = message.body,
                     fontSize = 15.sp,
-                    color = if (message.fromMe) Color.White else Color(0xFF1D1B20),
+                    lineHeight = 20.sp,
+                    color = onBubble,
                 )
             }
 
@@ -1051,17 +1218,59 @@ private fun MessageBubble(
                     color = if (message.fromMe) Color.White.copy(alpha = 0.8f)
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (message.fromMe) {
+                if (message.fromMe && !failed) {
                     Spacer(Modifier.width(4.dp))
+                    if (message.status == MsgStatus.SENDING) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(tokens.lilac.copy(alpha = 0.18f))
+                                .border(
+                                    1.dp, tokens.lilac.copy(alpha = 0.42f),
+                                    RoundedCornerShape(50),
+                                )
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "◷ Queued",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = tokens.lilac,
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = ticks(message.status),
+                            fontSize = 10.sp,
+                            color = if (
+                                message.status == MsgStatus.DELIVERED ||
+                                message.status == MsgStatus.READ
+                            ) {
+                                TickBlue
+                            } else {
+                                Color.White.copy(alpha = 0.9f)
+                            },
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            if (failed) {
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(tokens.coral.copy(alpha = 0.18f))
+                        .border(1.dp, tokens.coral.copy(alpha = 0.55f), RoundedCornerShape(50))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        text = ticks(message.status),
-                        fontSize = 10.sp,
-                        color = when (message.status) {
-                            MsgStatus.FAILED -> Color(0xFFFFB4AB)
-                            MsgStatus.DELIVERED, MsgStatus.READ -> TickBlue
-                            else -> Color.White.copy(alpha = 0.85f)
-                        },
+                        text = "↻  Retry",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
+                        color = tokens.coral,
                     )
                 }
             }
@@ -1127,7 +1336,7 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 private fun ticks(status: MsgStatus): String = when (status) {
-    MsgStatus.SENDING -> "◷"
+    MsgStatus.SENDING -> "◷ Queued"
     MsgStatus.SENT -> "✓"
     MsgStatus.DELIVERED, MsgStatus.READ -> "✓✓"
     MsgStatus.FAILED -> "Retry"
@@ -1147,7 +1356,7 @@ private fun transportShort(transport: String): String = when (transport) {
 /** Small inline player for voice notes; no external app needed. */
 @Composable
 private fun VoiceBubble(path: String, fromMe: Boolean) {
-    val tint = if (fromMe) Color.White else MaterialTheme.colorScheme.primary
+    val tint = if (fromMe) Color.White else MeshTokens.palette.violet
     var playing by remember(path) { mutableStateOf(false) }
     var player by remember(path) { mutableStateOf<MediaPlayer?>(null) }
 
@@ -1198,7 +1407,7 @@ private fun VoiceBubble(path: String, fromMe: Boolean) {
                 if (playing) "Playing…" else "Voice message",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (fromMe) Color.White else Color(0xFF1D1B20),
+                color = if (fromMe) Color.White else MeshTokens.palette.incomingText,
             )
             Text(
                 "Tap to listen",

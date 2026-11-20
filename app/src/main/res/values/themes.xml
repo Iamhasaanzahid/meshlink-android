@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base app theme; Compose draws the real Material 3 theme at runtime. -->
-    <style name="Theme.MeshLink" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@color/mesh_purple</item>
-        <item name="android:windowBackground">@color/mesh_background</item>
+    <!-- Compose draws the real Material 3 theme; this only styles the window
+         before the first frame so the app never flashes a stock background. -->
+    <style name="Theme.MeshLink" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/mesh_violet_deep</item>
+        <item name="android:windowBackground">@color/mesh_dark_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
