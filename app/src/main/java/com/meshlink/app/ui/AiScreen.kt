@@ -40,7 +40,11 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
+private const val CLOUD_AI_URL = "https://mhzaly-ai.mhzaly.workers.dev/api/chat"
 private const val DEFAULT_BASE_URL = "http://192.168.1.50:11434"
 private const val DEFAULT_MODEL = "llama3.2"
 
@@ -339,7 +343,45 @@ private suspend fun probeEngine(): Boolean = withContext(Dispatchers.IO) {
     }
 }
 
-/** Private local engine when available; built-in responder is always the fallback. */
+/** Cloud brain for real questions. Returns null when offline or unavailable. */
+private suspend fun chatWithCloud(
+    history: List<AiMessage>,
+    prompt: String,
+): String? = withContext(Dispatchers.IO) {
+    var connection: HttpURLConnection? = null
+    try {
+        val messages = JSONArray()
+        history.takeLast(12).forEach { message ->
+            messages.put(
+                JSONObject()
+                    .put("role", message.role)
+                    .put("content", message.text.take(1500)),
+            )
+        }
+        val payload = JSONObject().put("messages", messages).toString()
+        connection = URL(CLOUD_AI_URL).openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 4_000
+        connection.readTimeout = 25_000
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        connection.setRequestProperty("X-Mhzaly-Client", "android")
+        connection.doOutput = true
+        connection.outputStream.use { out -> out.write(payload.toByteArray(Charsets.UTF_8)) }
+
+        val code = connection.responseCode
+        val body = connection.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (code !in 200..299 || body.isBlank()) return@withContext null
+        val json = runCatching { JSONObject(body) }.getOrNull() ?: return@withContext null
+        if (!json.optBoolean("ok", false)) return@withContext null
+        return@withContext cleanEngineReply(json.optString("reply", ""))
+    } catch (e: Exception) {
+        return@withContext null
+    } finally {
+        connection?.disconnect()
+    }
+}
+
+/** Cloud first for real questions, private engine second, built-in always works. */
 private suspend fun chatWithEngine(
     history: List<AiMessage>,
     prompt: String,
@@ -348,6 +390,12 @@ private suspend fun chatWithEngine(
     // replies natural and instant when the private engine is missing or slow.
     val builtIn = builtInReply(history, prompt)
     if (builtIn.confident) return@withContext builtIn.text
+
+    // Real questions go to the cloud brain first so even basic facts, maths
+    // and general knowledge get a proper answer instead of a generic line.
+    val cloud = chatWithCloud(history, prompt)
+    if (cloud != null) return@withContext cloud
+
     if (!probeEngine()) return@withContext builtIn.text
 
     var connection: HttpURLConnection? = null
@@ -676,8 +724,10 @@ private fun replyFor(intent: ChatIntent, text: String, history: List<AiMessage>)
             "Mere paas live weather nahi hai 🌦️ Phone ke weather app se check kar lo. Barish/garmi ho to chhatri/paani saath rakhna. Aaj aapke yahan kaisa hai?"
         ChatIntent.HEALTH ->
             "Sehat pehle 💜 Paani, neend aur thoda movement sabse zyada farak dete hain. Fever ya dard ho to doctor se consult karna better. Main general tips de sakta hoon, diagnosis nahi."
-        ChatIntent.TIME ->
-            "Mere paas aapki local clock access nahi hai, phone ki clock dekh lijiye ⏰ Chahein to time management me madad kar sakta hoon."
+        ChatIntent.TIME -> {
+            val now = SimpleDateFormat("h:mm a, d MMMM", Locale.getDefault()).format(Date())
+            "Aapke phone ke hisaab se abhi $now hai ⏰ Chahein to time management ka chhota plan bana deta hoon."
+        }
         ChatIntent.APP_CHAT ->
             "Mhzaly chats phone par encrypted vault me rehti hain. Chats tab se conversations dekh sakte ho — cloud par upload nahi hota. Main reply draft karne me bhi madad kar sakta hoon."
         ChatIntent.APP_GROUP ->

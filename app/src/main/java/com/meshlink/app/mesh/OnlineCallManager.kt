@@ -220,12 +220,17 @@ object OnlineCallManager {
     private fun iceServers(): List<PeerConnection.IceServer> = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer(),
         PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
-        // Multiple public TURN transports. Strict mobile/CGNAT networks often
-        // block peer-to-peer UDP, so calls relay over TCP 443 / TLS 443 too.
-        // Media stays DTLS-SRTP encrypted; the relay only forwards sealed
-        // packets and cannot listen.
+        PeerConnection.IceServer.builder("stun:stun.services.mozilla.com:3478").createIceServer(),
+        // Mobile data <-> Wi-Fi crosses two different NATs (often CGNAT), so
+        // STUN alone is not enough. Every route below can relay encrypted media.
+        // UDP first, then TCP 80/443 and TLS 443 for strict firewalls.
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:3478?transport=udp")
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:3478?transport=tcp")
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
         PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
             .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
         PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80?transport=tcp")

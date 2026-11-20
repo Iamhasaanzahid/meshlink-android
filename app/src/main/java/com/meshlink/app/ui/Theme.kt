@@ -31,27 +31,27 @@ val BrandSky = Color(0xFF7DD3FC)
 val BrandAmber = Color(0xFFFCD34D)
 val BrandCoral = Color(0xFFFDA4AF)
 
-val WebDarkBg = Color(0xFF0B0716)
-val WebDarkBgSoft = Color(0xFF100A20)
-val WebDarkPanel = Color(0xFF17102B)
-val WebDarkPanel2 = Color(0xFF1E1538)
-val WebDarkSurface = Color(0xFF241A44)
-val WebDarkSurface2 = Color(0xFF302354)
-val WebDarkSurface3 = Color(0xFF3D2C6B)
-val WebDarkText = Color(0xFFF7F3FF)
-val WebDarkText2 = Color(0xFFCFC1EA)
-val WebDarkMuted = Color(0xFF9D8CBF)
+val WebDarkBg = Color(0xFF12111A)
+val WebDarkBgSoft = Color(0xFF171522)
+val WebDarkPanel = Color(0xFF1B1826)
+val WebDarkPanel2 = Color(0xFF231F31)
+val WebDarkSurface = Color(0xFF282338)
+val WebDarkSurface2 = Color(0xFF332D45)
+val WebDarkSurface3 = Color(0xFF403852)
+val WebDarkText = Color(0xFFF2EFF8)
+val WebDarkText2 = Color(0xFFC9C2D8)
+val WebDarkMuted = Color(0xFFA79EBB)
 
-val WebLightBg = Color(0xFFF5F1FF)
-val WebLightBgSoft = Color(0xFFFBF9FF)
-val WebLightPanel = Color(0xFFFFFFFF)
-val WebLightPanel2 = Color(0xFFF9F6FF)
-val WebLightSurface = Color(0xFFEFE8FF)
-val WebLightSurface2 = Color(0xFFE4D9FF)
-val WebLightSurface3 = Color(0xFFD5C5FF)
-val WebLightText = Color(0xFF221339)
-val WebLightText2 = Color(0xFF54446E)
-val WebLightMuted = Color(0xFF7E6C99)
+val WebLightBg = Color(0xFFF0EEF5)
+val WebLightBgSoft = Color(0xFFF6F4F9)
+val WebLightPanel = Color(0xFFF8F6FB)
+val WebLightPanel2 = Color(0xFFF2EFF7)
+val WebLightSurface = Color(0xFFE9E5F1)
+val WebLightSurface2 = Color(0xFFDED8EB)
+val WebLightSurface3 = Color(0xFFCFC7E1)
+val WebLightText = Color(0xFF1F1A2E)
+val WebLightText2 = Color(0xFF4B4361)
+val WebLightMuted = Color(0xFF776E8B)
 
 /** Extra tokens that Material 3's colour scheme does not model. */
 data class MeshPalette(
@@ -98,26 +98,26 @@ private val DarkMeshPalette = MeshPalette(
     headerMid = Color(0xFF6D28D9),
     headerEnd = Color(0xFF8B5CF6),
     canvasStart = WebDarkBg,
-    canvasEnd = Color(0xFF1A1130),
-    rowStart = Color(0xFF181029),
-    rowEnd = Color(0xFF130C22),
-    pinnedStart = Color(0xFF2A1B4D),
-    pinnedEnd = Color(0xFF1B1436),
+    canvasEnd = Color(0xFF1B1829),
+    rowStart = Color(0xFF1F1B2C),
+    rowEnd = Color(0xFF191624),
+    pinnedStart = Color(0xFF2E2742),
+    pinnedEnd = Color(0xFF221E33),
     outgoingStart = Color(0xFF7C3AED),
     outgoingEnd = Color(0xFF5B21B6),
     incomingStart = WebDarkSurface,
-    incomingEnd = Color(0xFF1D1538),
+    incomingEnd = Color(0xFF241F36),
     incomingText = WebDarkText,
-    dateChip = Color(0xFF2B2050),
+    dateChip = Color(0xFF322B48),
     glass = Color.White.copy(alpha = 0.08f),
     glassBorder = Color.White.copy(alpha = 0.16f),
     hairline = Color.White.copy(alpha = 0.08f),
     glow = BrandLight,
-    navBar = Color(0xFF140D27),
-    drawer = Color(0xFF130D24),
-    composerBar = Color(0xFF171029),
-    composerPill = Color(0xFF211838),
-    statusPill = Color(0xFF242046),
+    navBar = Color(0xFF191624),
+    drawer = Color(0xFF171421),
+    composerBar = Color(0xFF1D1A2A),
+    composerPill = Color(0xFF282338),
+    statusPill = Color(0xFF2D2742),
 )
 
 private val LightMeshPalette = MeshPalette(
@@ -130,27 +130,27 @@ private val LightMeshPalette = MeshPalette(
     headerStart = Color(0xFF5B21B6),
     headerMid = Color(0xFF7C3AED),
     headerEnd = Color(0xFFA78BFA),
-    canvasStart = Color(0xFFFBF9FF),
-    canvasEnd = Color(0xFFEDE4FF),
-    rowStart = Color.White,
-    rowEnd = Color(0xFFFBF8FF),
-    pinnedStart = Color(0xFFF1E8FF),
-    pinnedEnd = Color(0xFFFFFBFF),
+    canvasStart = Color(0xFFF6F4F9),
+    canvasEnd = Color(0xFFE9E4F2),
+    rowStart = Color(0xFFF8F6FB),
+    rowEnd = Color(0xFFF1EEF7),
+    pinnedStart = Color(0xFFEDE6FA),
+    pinnedEnd = Color(0xFFF8F5FD),
     outgoingStart = Color(0xFF7C3AED),
     outgoingEnd = Color(0xFF5B21B6),
-    incomingStart = Color.White,
-    incomingEnd = Color(0xFFF9F6FF),
+    incomingStart = Color(0xFFFBF9FE),
+    incomingEnd = Color(0xFFF2EFF7),
     incomingText = WebLightText,
-    dateChip = Color.White,
+    dateChip = Color(0xFFF2EEF9),
     glass = Color.White.copy(alpha = 0.18f),
     glassBorder = Color.White.copy(alpha = 0.42f),
-    hairline = Color(0xFFE6DCFF),
+    hairline = Color(0xFFDED7EA),
     glow = BrandViolet,
-    navBar = Color.White,
-    drawer = Color(0xFFFAF7FF),
-    composerBar = Color(0xFFFBF9FF),
-    composerPill = Color.White,
-    statusPill = Color(0xFFF0EAFF),
+    navBar = Color(0xFFF6F4F9),
+    drawer = Color(0xFFF2EFF7),
+    composerBar = Color(0xFFF6F4F9),
+    composerPill = Color(0xFFFBF9FE),
+    statusPill = Color(0xFFE8E1F5),
 )
 
 private val LocalMeshPalette = compositionLocalOf { DarkMeshPalette }
