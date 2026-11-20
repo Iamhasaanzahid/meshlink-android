@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.27.0 — 2026-11-19 — worldwide web bridge + premium UI
+
+### Added
+- **Android ↔ web messaging bridge.** Text messages now travel between the
+  Android app and meshlink web through the free MQTT relay, so the app works
+  worldwide over the internet, not only nearby.
+- Worldwide online mode is on by default; local Bluetooth / Wi-Fi / SMS radios
+  still work automatically when there is no internet.
+
+### Changed
+- Android header now carries the MeshLink “HYBRID MESSENGER + CALLS” identity.
+- AI setup is branded only as MeshLink AI; no third-party engine name is shown.
+- Live email OTP now sends real 6-digit codes through Resend.
+
 ## 1.26.2 — 2026-11-19 — security hardening
 
 ### Changed

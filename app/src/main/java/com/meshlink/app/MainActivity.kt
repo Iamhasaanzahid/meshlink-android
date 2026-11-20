@@ -33,6 +33,9 @@ class MainActivity : ComponentActivity() {
         // Hardware-backed identity key.
         runCatching { com.meshlink.app.crypto.KeyManager().ensureE2EEKeyPair() }
 
+        // Worldwide internet mode is on by default; local radios still work.
+        com.meshlink.app.data.MeshSettings.ensureGlobalOnline(this)
+
         // Reconnect the mesh on every launch using the saved identity.
         SessionStore.uin(this)?.let { startMeshService(this, it) }
 

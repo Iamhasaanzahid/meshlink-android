@@ -15,6 +15,7 @@ object MeshSettings {
     private const val KEY_MAX_HOPS = "max_hops"
     private const val KEY_SMS_FALLBACK = "sms_fallback"
     private const val KEY_ONLINE = "online_enabled"
+    private const val KEY_ONLINE_MIGRATED = "online_global_v2"
     private const val KEY_BROKER = "online_broker"
 
     const val DEFAULT_HOPS = 8
@@ -45,12 +46,23 @@ object MeshSettings {
     }
 
     /**
-     * Online mode carries messages over the internet (the "www") through an
-     * MQTT relay. Off by default: local radios are free and private, while
-     * online mode needs a network and a relay.
+     * Online mode carries messages over the internet through an MQTT relay, so
+     * MeshLink works anywhere in the world. It is on by default; local radios
+     * stay free and keep working when there is no internet.
      */
     fun onlineEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_ONLINE, false)
+        prefs(context).getBoolean(KEY_ONLINE, true)
+
+    /** One-time upgrade: enable worldwide mode on existing installations. */
+    fun ensureGlobalOnline(context: Context) {
+        val p = prefs(context)
+        if (!p.getBoolean(KEY_ONLINE_MIGRATED, false)) {
+            p.edit()
+                .putBoolean(KEY_ONLINE_MIGRATED, true)
+                .putBoolean(KEY_ONLINE, true)
+                .apply()
+        }
+    }
 
     fun setOnlineEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_ONLINE, enabled).apply()

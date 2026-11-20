@@ -465,6 +465,13 @@ fun HomeScreen(
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.4.sp,
                                 )
+                                Text(
+                                    "HYBRID MESSENGER + CALLS",
+                                    color = Color.White.copy(alpha = 0.62f),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 1.8.sp,
+                                )
                                 Spacer(Modifier.height(6.dp))
                                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                     Box(

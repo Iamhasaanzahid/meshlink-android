@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.meshlink.app.util.isMeshLinkId
+import org.json.JSONObject
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.MqttClient
@@ -36,6 +37,8 @@ class OnlineTransport(private val context: Context) {
     companion object {
         private const val TAG = "MeshLinkOnline"
         private const val TOPIC_ROOT = "meshlink/v1"
+        /** Shared topic with the web app (plain UTF-8 JSON, no app crypto). */
+        private const val WEB_TOPIC_ROOT = "meshlink/web"
         const val DEFAULT_BROKER = "ssl://broker.hivemq.com:8883"
         // Some mobile carriers block outbound 8883/MQTT. Paho supports these
         // URI schemes natively, so we rotate instead of getting stuck forever.
@@ -75,6 +78,7 @@ class OnlineTransport(private val context: Context) {
 
     private fun resubscribe(c: MqttClient) {
         runCatching { c.subscribe("$TOPIC_ROOT/$uin/#", 0) }
+        runCatching { c.subscribe("$WEB_TOPIC_ROOT/$uin", 0) }
         val watched = synchronized(relaySubs) { relaySubs.toList() }
         for (u in watched) runCatching { c.subscribe("$TOPIC_ROOT/$u/#", 0) }
     }
@@ -154,6 +158,26 @@ class OnlineTransport(private val context: Context) {
             true
         }.getOrElse {
             Log.w(TAG, "publish failed: ${it.message}")
+            false
+        }
+    }
+
+    /** Sends the same small JSON envelope the web app uses to the web bridge. */
+    fun publishWebBridge(destination: String, payload: String): Boolean {
+        val dest = destination.trim().uppercase()
+        if (!dest.isMeshLinkId() || !isConnected) {
+            Log.w(TAG, "web bridge skipped: online=${isConnected} dest=$dest")
+            return false
+        }
+        return runCatching {
+            client?.publish(
+                "$WEB_TOPIC_ROOT/$dest",
+                MqttMessage(payload.toByteArray(Charsets.UTF_8)).apply { qos = 0; isRetained = false },
+            )
+            Log.i(TAG, "web bridge published to $dest")
+            true
+        }.getOrElse {
+            Log.w(TAG, "web bridge publish failed: ${it.message}")
             false
         }
     }
@@ -257,6 +281,10 @@ class OnlineTransport(private val context: Context) {
 
     private fun handleMessage(topic: String?, message: MqttMessage?) {
         val t = topic ?: return
+        if (t.startsWith("$WEB_TOPIC_ROOT/")) {
+            handleWebMessage(t, message)
+            return
+        }
         val parts = t.split('/')
         // meshlink / v1 / <receiver> / <sender>
         if (parts.size < 4) return
@@ -270,6 +298,32 @@ class OnlineTransport(private val context: Context) {
             return
         }
         onFrame?.invoke(sender, plain)
+    }
+
+    /** Converts a web-app JSON message into a normal MeshLink text frame. */
+    private fun handleWebMessage(topic: String, message: MqttMessage?) {
+        val raw = runCatching { String(message?.payload ?: return, Charsets.UTF_8) }.getOrNull() ?: return
+        val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val from = data.optString("u").replace(Regex("\\D"), "").take(10)
+        if (from == uin || !from.isMeshLinkId()) return
+        val body = data.optString("b")
+        if (body.isBlank()) return
+        val payload = JSONObject()
+            .put("i", data.optString("i").take(80))
+            .put("b", body)
+            .put("n", data.optString("n").take(48))
+            .put("u", from)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        if (payload.size > MeshFrame.MAX_PAYLOAD) return
+        val frame = MeshFrame.Frame(
+            type = MeshFrame.TYPE_MESSAGE,
+            sourceNodeId = MeshFrame.nodeId16(from),
+            destNodeId = MeshFrame.nodeId16(uin),
+            ttl = 1,
+            payload = payload,
+        ).serialize()
+        onFrame?.invoke(from, frame)
     }
 
     // -------------------------------------------------------------- crypto

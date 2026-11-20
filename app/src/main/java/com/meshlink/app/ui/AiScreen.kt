@@ -260,7 +260,7 @@ fun AiScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Ollama base URL",
+                            "MeshLink AI engine URL",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -572,8 +572,8 @@ private fun localReply(question: String): String {
         Regex("offline|mesh|hotspot|lan|relay|radio").containsMatchIn(low) ->
             "MeshLink has 3 layers: 1) online relay when internet is available, 2) local hotspot/LAN radio mesh (Bluetooth LE, Wi-Fi Direct, SMS) when it is not, 3) store-and-forward with dedupe so messages move automatically when connectivity returns."
 
-        Regex("ai|model|ollama|engine|intelligence").containsMatchIn(low) ->
-            "I am MeshLink AI, a free on-device assistant. In the code the integration is called the Ollama adapter (llama3.2, phi3, qwen2.5), but the product name is always MeshLink AI. Change the engine URL above; if it is unreachable, this built-in responder answers instead."
+        Regex("ai|model|engine|intelligence").containsMatchIn(low) ->
+            "I am MeshLink AI, your private assistant. I can use a local MeshLink AI engine when you configure one; otherwise my built-in responder answers instantly without uploading your chats."
 
         Regex("vault|pin|encrypt|secur|password|privacy|hack").containsMatchIn(low) ->
             "Your vault uses AES-256-GCM with a PBKDF2-SHA256 key. A 6-digit app PIN adds a second layer and auto-locks after 5 minutes. Your email is only a security verification — your MeshLink ID stays your identity."

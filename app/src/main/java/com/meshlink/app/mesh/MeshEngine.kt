@@ -327,6 +327,20 @@ class MeshEngine(private val context: Context) {
         return true
     }
 
+    /** Mirrors a text message to the web app over the shared MQTT bridge. */
+    private fun publishWebText(destination: String, messageId: String, body: String, senderName: String) {
+        if (!destination.isMeshLinkId()) return
+        val t = online ?: return
+        if (!t.isConnected) return
+        val payload = JSONObject()
+            .put("i", messageId)
+            .put("b", body)
+            .put("n", senderName)
+            .put("u", localUin)
+            .toString()
+        onlineSender.execute { runCatching { t.publishWebBridge(destination, payload) } }
+    }
+
     /** Publishes one already-built online envelope (file / call signalling). */
     private fun sendOnlineRaw(destination: String, bytes: ByteArray): Boolean {
         val t = online ?: return false
@@ -392,6 +406,8 @@ class MeshEngine(private val context: Context) {
             Log.w(TAG, "cannot build frames", it)
             return false
         }
+        // The web bridge carries plain JSON, independent of radio frame size.
+        publishWebText(target, messageId, body, senderName)
         return sendFrames(target, frames, allowSms, smsNumber)
     }
 
