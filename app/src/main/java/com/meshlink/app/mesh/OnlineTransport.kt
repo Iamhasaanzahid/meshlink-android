@@ -45,7 +45,7 @@ class OnlineTransport(private val context: Context) {
         /** Shared topic with the web app (plain UTF-8 JSON, no app crypto). */
         private const val WEB_TOPIC_ROOT = "meshlink/web"
         /** Authenticated Cloudflare relay used before the public MQTT fallback. */
-        private const val RELAY_BASE = "https://meshlink-app.pages.dev/api/bridge"
+        private const val RELAY_BASE = "https://mhzaly-app.pages.dev/api/bridge"
         const val DEFAULT_BROKER = "ssl://broker.hivemq.com:8883"
         // Some mobile carriers block outbound 8883/MQTT. Paho supports these
         // URI schemes natively, so we rotate instead of getting stuck forever.

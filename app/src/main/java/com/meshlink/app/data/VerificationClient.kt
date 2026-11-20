@@ -8,7 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-private const val VERIFY_BASE_URL = "https://meshlink-app.pages.dev"
+private const val VERIFY_BASE_URL = "https://mhzaly-app.pages.dev"
 private const val TIMEOUT_MS = 15_000
 
 /** Results returned by the email verification endpoints. */

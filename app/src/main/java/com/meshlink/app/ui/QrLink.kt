@@ -18,7 +18,7 @@ private const val TAG = "MhzalyQrLink"
  */
 object QrLink {
 
-    private const val API_BASE = "https://meshlink-app.pages.dev"
+    private const val API_BASE = "https://mhzaly-app.pages.dev"
 
     data class Request(val host: String, val session: String, val token: String) {
         /** Only allow the app's own demo server or an HTTPS MeshLink host. */
