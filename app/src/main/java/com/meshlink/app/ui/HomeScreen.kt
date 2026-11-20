@@ -90,6 +90,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -690,156 +691,7 @@ fun HomeScreen(
             },
         ) {
         Scaffold(
-            topBar = {
-                // No fixed purple bar anywhere — each screen owns its own header.
-                if (tab == -1) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(tokens.headerStart, tokens.headerMid, tokens.headerEnd),
-                            ),
-                        ),
-                ) {
-                    // Soft light blooming from the corners gives the header depth.
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 40.dp, y = (-70).dp)
-                            .size(240.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
-                                ),
-                            ),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = (-80).dp, y = 40.dp)
-                            .size(200.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
-                                ),
-                            ),
-                    )
-                    Column(
-                        modifier = Modifier
-                            .statusBarsPadding()
-                            .padding(start = 20.dp, end = 14.dp, top = 10.dp, bottom = 16.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Filled.Menu, contentDescription = "Open menu", tint = Color.White)
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Mhzaly",
-                                    color = Color.White,
-                                    fontSize = 25.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 0.2.sp,
-                                    maxLines = 1,
-                                )
-                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .background(
-                                                if (isOnline) BrandMint else Color(0xFFFFC46B),
-                                                CircleShape,
-                                            ),
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        "$myUin · $presence",
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { tab = 4 }) {
-                                    Icon(Icons.Filled.Info, contentDescription = "Status", tint = Color.White)
-                                }
-                                IconButton(onClick = { aiOpen = true }) {
-                                    Icon(Icons.Filled.AutoAwesome, contentDescription = "Mhzaly AI", tint = Color.White)
-                                }
-                                IconButton(onClick = { groupDialog = true }, enabled = tab == 0) {
-                                    Icon(Icons.Filled.Add, contentDescription = "New group",
-                                        tint = if (tab == 0) Color.White else Color.White.copy(alpha = 0.4f))
-                                }
-                                Avatar(displayName.ifBlank { myUin }, 44.dp, showOnline = isOnline, photoPath = avatarPath)
-                            }
-                        }
-                        if (tab == 0) {
-                            Spacer(Modifier.height(16.dp))
-                            Surface(
-                                color = Color.White.copy(alpha = 0.14f),
-                                contentColor = Color.White,
-                                shape = RoundedCornerShape(20.dp),
-                                shadowElevation = 10.dp,
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp, Color.White.copy(alpha = 0.24f),
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Search,
-                                        contentDescription = null,
-                                        tint = Color.White.copy(alpha = 0.9f),
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    BasicTextField(
-                                        value = query,
-                                        onValueChange = { query = it },
-                                        singleLine = true,
-                                        textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                                        cursorBrush = SolidColor(Color.White),
-                                        modifier = Modifier.weight(1f),
-                                        decorationBox = { inner ->
-                                            if (query.isEmpty()) {
-                                                Text(
-                                                    "Search chats",
-                                                    color = Color.White.copy(alpha = 0.7f),
-                                                    fontSize = 14.sp,
-                                                )
-                                            }
-                                            inner()
-                                        },
-                                    )
-                                    if (query.isNotEmpty()) {
-                                        IconButton(
-                                            onClick = { query = "" },
-                                            modifier = Modifier.size(48.dp),
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.Close,
-                                                contentDescription = "Clear",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                }
-            },
+            topBar = {},
             floatingActionButton = {
                 if (tab == 0) {
                     Surface(
@@ -946,8 +798,25 @@ fun HomeScreen(
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) {
-                when (tab) {
+            Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) {
+                if (tab != 3 && tab != 7) {
+                    HomeChromeHeader(
+                        tab = tab,
+                        myUin = myUin,
+                        displayName = displayName,
+                        presence = presence,
+                        isOnline = isOnline,
+                        avatarPath = avatarPath,
+                        query = query,
+                        onQuery = { query = it },
+                        onMenu = { scope.launch { drawerState.open() } },
+                        onStatus = { tab = 4 },
+                        onAi = { aiOpen = true },
+                        onNewGroup = { groupDialog = true },
+                    )
+                }
+                Box(Modifier.fillMaxSize().weight(1f)) {
+                    when (tab) {
                     0 -> Column {
                         ChatListScreen(
                             chats = chats
@@ -1100,6 +969,7 @@ fun HomeScreen(
             }
         }
         }
+        }
     }
 
     // MeshLink AI slides in from the right like a chat-side copilot, instead
@@ -1208,3 +1078,156 @@ fun HomeScreen(
     }
 }
 
+/** Clean neutral header that keeps menu / search / AI / archive reachable.
+ * It is part of the screen content (not a stuck purple Scaffold bar). */
+@Composable
+private fun HomeChromeHeader(
+    tab: Int,
+    myUin: String,
+    displayName: String,
+    presence: String,
+    isOnline: Boolean,
+    avatarPath: String?,
+    query: String,
+    onQuery: (String) -> Unit,
+    onMenu: () -> Unit,
+    onStatus: () -> Unit,
+    onAi: () -> Unit,
+    onNewGroup: () -> Unit,
+) {
+    val tokens = MeshTokens.palette
+    val title = when (tab) {
+        0 -> "Chats"
+        1 -> "Calls"
+        2 -> "Nearby"
+        4 -> "Status"
+        5 -> "Starred"
+        6 -> "Archived"
+        else -> "Mhzaly"
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp),
+        shadowElevation = 10.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, tokens.hairline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onMenu) {
+                    Icon(
+                        Icons.Filled.Menu,
+                        contentDescription = "Open menu",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .background(
+                                    if (isOnline) BrandMint else Color(0xFFFFC46B),
+                                    CircleShape,
+                                ),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "$myUin · $presence",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(onClick = onStatus) {
+                    Icon(Icons.Filled.Info, contentDescription = "Status", tint = tokens.sky)
+                }
+                IconButton(onClick = onAi) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = "Mhzaly AI", tint = tokens.lilac)
+                }
+                if (tab == 0) {
+                    IconButton(onClick = onNewGroup) {
+                        Icon(Icons.Filled.Add, contentDescription = "New group", tint = tokens.violet)
+                    }
+                }
+                Avatar(
+                    displayName.ifBlank { myUin },
+                    38.dp,
+                    showOnline = isOnline,
+                    photoPath = avatarPath,
+                )
+            }
+
+            if (tab == 0) {
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, tokens.hairline),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        BasicTextField(
+                            value = query,
+                            onValueChange = onQuery,
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                            ),
+                            cursorBrush = SolidColor(tokens.violet),
+                            modifier = Modifier.weight(1f),
+                            decorationBox = { inner ->
+                                if (query.isEmpty()) {
+                                    Text(
+                                        "Search chats",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 14.sp,
+                                    )
+                                }
+                                inner()
+                            },
+                        )
+                        if (query.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onQuery("") },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
