@@ -1,6 +1,5 @@
 package com.meshlink.app.ui
 
-import android.content.Context
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -28,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -43,67 +41,42 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val AI_PREFS = "meshlink_ai"
-private const val KEY_BASE_URL = "ollama_base_url"
 private const val DEFAULT_BASE_URL = "http://192.168.1.50:11434"
+private const val DEFAULT_MODEL = "llama3.2"
 
-private val AI_MODELS = listOf("llama3.2", "phi3", "qwen2.5")
 private val AI_PROMPTS = listOf(
-    "Summarize my chats",
-    "How does offline mesh work?",
-    "Tell me about calls",
-    "Explain my vault PIN",
-    "How does QR login work?",
+    "Aaj kya khaya?",
+    "Dinner ka idea do",
+    "Mujhe thaka laga raha hai",
+    "Plan banata hai",
+    "Koi joke sunao",
+    "Kya seekhun aaj?",
 )
 
 private data class AiMessage(val role: String, val text: String) {
     val isUser: Boolean get() = role == "user"
 }
 
-private data class EngineReply(val text: String, val online: Boolean)
-
 /**
- * MeshLink AI — on-device intelligence with a built-in offline fallback.
- * Prompts are sent to a local Ollama engine; nothing is uploaded to a cloud.
+ * MeshLink AI — a private everyday assistant. Conversation stays on the device
+ * when possible; the built-in responder always works without internet.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val prefs = remember {
-        context.getSharedPreferences(AI_PREFS, Context.MODE_PRIVATE)
-    }
-    var baseUrl by remember {
-        mutableStateOf(prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL)
-    }
-    var model by remember { mutableStateOf(AI_MODELS.first()) }
-    var modelMenuOpen by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var isTyping by remember { mutableStateOf(false) }
-    var engineOnline by remember { mutableStateOf(false) }
-    var checkingEngine by remember { mutableStateOf(true) }
     val messages = remember {
         mutableStateListOf(
             AiMessage(
                 "assistant",
-                "Salam! Main MeshLink AI — your on-device assistant. Ask me about your chats, groups, calls, offline mesh, vault PIN or QR linking. 💜",
+                "Salam! Main MeshLink AI hoon — aapka private daily assistant. Aam baat karo, kuch bhi poocho: khaana, plan, mood, padhai, kaam, jokes… main yahan hoon. 💜",
             ),
         )
     }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
-
-    fun saveBaseUrl(value: String) {
-        baseUrl = value
-        prefs.edit().putString(KEY_BASE_URL, value).apply()
-    }
-
-    suspend fun refreshEngineStatus() {
-        checkingEngine = true
-        engineOnline = probeEngine(baseUrl)
-        checkingEngine = false
-    }
 
     fun ask(question: String) {
         val text = question.trim()
@@ -114,14 +87,11 @@ fun AiScreen(onBack: () -> Unit) {
         isTyping = true
         scope.launch {
             val history = messages.takeLast(12).map { AiMessage(it.role, it.text) }
-            val reply = chatWithEngine(baseUrl, model, history, text)
-            engineOnline = reply.online
-            messages.add(AiMessage("assistant", reply.text))
+            val reply = chatWithEngine(history, text)
+            messages.add(AiMessage("assistant", reply))
             isTyping = false
         }
     }
-
-    LaunchedEffect(Unit) { refreshEngineStatus() }
 
     LaunchedEffect(messages.size, isTyping) {
         val last = if (isTyping) messages.size else messages.size - 1
@@ -145,172 +115,56 @@ fun AiScreen(onBack: () -> Unit) {
                     )
                     .padding(horizontal = 12.dp, vertical = 16.dp),
             ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color.White,
-                            )
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "MeshLink AI",
-                                color = Color.White,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                "On-device intelligence",
-                                color = Color.White.copy(alpha = 0.88f),
-                                fontSize = 12.sp,
-                            )
-                        }
-                        AssistChip(
-                            onClick = { scope.launch { refreshEngineStatus() } },
-                            label = {
-                                Text(
-                                    when {
-                                        checkingEngine -> "Checking…"
-                                        engineOnline -> "Engine online"
-                                        else -> "Engine offline"
-                                    },
-                                    fontSize = 10.sp,
-                                )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (engineOnline) {
-                                    BrandMint.copy(alpha = 0.22f)
-                                } else {
-                                    Color.White.copy(alpha = 0.16f)
-                                },
-                                labelColor = Color.White,
-                            ),
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White,
                         )
                     }
-
-                    Spacer(Modifier.height(14.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ExposedDropdownMenuBox(
-                            expanded = modelMenuOpen,
-                            onExpandedChange = { modelMenuOpen = !modelMenuOpen },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            OutlinedTextField(
-                                value = model,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Model") },
-                                trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(modelMenuOpen)
-                                },
-                                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = headerFieldColors(),
-                            )
-                            ExposedDropdownMenu(
-                                expanded = modelMenuOpen,
-                                onDismissRequest = { modelMenuOpen = false },
-                            ) {
-                                AI_MODELS.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            model = option
-                                            modelMenuOpen = false
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(
-                            onClick = {
-                                messages.clear()
-                                messages.add(
-                                    AiMessage(
-                                        "assistant",
-                                        "Chat cleared. What would you like to know about MeshLink? 💜",
-                                    ),
-                                )
-                            },
-                        ) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = "Clear chat",
-                                tint = Color.White,
-                            )
-                        }
-                    }
-                }
-            }
-
-            // ------------------------------------------- engine URL settings
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                ),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(4.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "MeshLink AI engine URL",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
+                            "MeshLink AI",
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
                         )
-                        TextButton(onClick = { scope.launch { refreshEngineStatus() } }) {
-                            Text("Check", fontSize = 11.sp)
-                        }
+                        Text(
+                            "Private everyday assistant",
+                            color = Color.White.copy(alpha = 0.88f),
+                            fontSize = 12.sp,
+                        )
                     }
-                    OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { saveBaseUrl(it) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = chatFieldColors(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = {
-                            scope.launch { refreshEngineStatus() }
-                            keyboard?.hide()
-                        }),
-                    )
+                    IconButton(
+                        onClick = {
+                            messages.clear()
+                            messages.add(
+                                AiMessage(
+                                    "assistant",
+                                    "Chat clear ho gaya. Ab kya baat karein? 💜",
+                                ),
+                            )
+                        },
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Clear chat",
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
 
             // -------------------------------------------------- chat header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Conversation",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.width(8.dp))
-                if (!engineOnline && !checkingEngine) {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("Built-in engine", fontSize = 10.sp) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = BrandMint.copy(alpha = 0.16f),
-                            labelColor = BrandDeep,
-                        ),
-                    )
-                }
-            }
+            Text(
+                "Daily chat",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
 
             // ---------------------------------------------------- messages
             LazyColumn(
@@ -388,18 +242,6 @@ fun AiScreen(onBack: () -> Unit) {
         }
     }
 }
-
-@Composable
-private fun headerFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedContainerColor = Color.White.copy(alpha = 0.14f),
-    unfocusedContainerColor = Color.White.copy(alpha = 0.10f),
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White,
-    focusedBorderColor = Color.White.copy(alpha = 0.65f),
-    unfocusedBorderColor = Color.White.copy(alpha = 0.35f),
-    focusedLabelColor = Color.White.copy(alpha = 0.9f),
-    unfocusedLabelColor = Color.White.copy(alpha = 0.75f),
-)
 
 @Composable
 private fun chatFieldColors() = OutlinedTextFieldDefaults.colors(
@@ -480,14 +322,14 @@ private fun TypingBubble() {
     }
 }
 
-/** Quick status probe for the chip. Never blocks a Compose frame. */
-private suspend fun probeEngine(base: String): Boolean = withContext(Dispatchers.IO) {
+/** Internal probe — never shown in the UI. Keeps replies instant when offline. */
+private suspend fun probeEngine(): Boolean = withContext(Dispatchers.IO) {
     var connection: HttpURLConnection? = null
     try {
-        connection = URL(base.trimEnd('/') + "/api/tags").openConnection() as HttpURLConnection
+        connection = URL(DEFAULT_BASE_URL.trimEnd('/') + "/api/tags").openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
-        connection.connectTimeout = 2_000
-        connection.readTimeout = 2_000
+        connection.connectTimeout = 1_500
+        connection.readTimeout = 1_500
         connection.responseCode in 200..299
     } catch (e: Exception) {
         false
@@ -496,16 +338,12 @@ private suspend fun probeEngine(base: String): Boolean = withContext(Dispatchers
     }
 }
 
-/** Talks to Ollama's /api/chat; falls back to the built-in responder. */
+/** Private local engine when available; built-in responder is always the fallback. */
 private suspend fun chatWithEngine(
-    base: String,
-    model: String,
     history: List<AiMessage>,
     prompt: String,
-): EngineReply = withContext(Dispatchers.IO) {
-    // Never make the user wait two minutes for a local engine that is not
-    // running. The built-in MeshLink AI answers instantly in that case.
-    if (!probeEngine(base)) return@withContext EngineReply(localReply(prompt), false)
+): String = withContext(Dispatchers.IO) {
+    if (!probeEngine()) return@withContext localReply(prompt)
     var connection: HttpURLConnection? = null
     try {
         val messages = JSONArray()
@@ -514,7 +352,7 @@ private suspend fun chatWithEngine(
                 .put("role", "system")
                 .put(
                     "content",
-                    "You are MeshLink AI, a warm private on-device assistant. Detect the user's emotion and reply with empathy. Keep answers concise, helpful and respectful. Reply in the user's language (English or Roman Urdu).",
+                    "You are MeshLink AI, a friendly private everyday assistant for normal conversation. Talk naturally about daily life, food, plans, mood, study, work, health and small talk. Be warm, concise and emotionally aware. Match the user's language (Roman Urdu, English or Hinglish). Detect feelings and answer with empathy. Never mention model names, servers, setup or technical configuration.",
                 ),
         )
         history.forEach { message ->
@@ -525,15 +363,15 @@ private suspend fun chatWithEngine(
             )
         }
         val payload = JSONObject()
-            .put("model", model)
+            .put("model", DEFAULT_MODEL)
             .put("stream", false)
             .put("messages", messages)
             .toString()
 
-        connection = URL(base.trimEnd('/') + "/api/chat").openConnection() as HttpURLConnection
+        connection = URL(DEFAULT_BASE_URL.trimEnd('/') + "/api/chat").openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 8_000
-        connection.readTimeout = 30_000
+        connection.connectTimeout = 6_000
+        connection.readTimeout = 25_000
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         connection.setRequestProperty("Accept", "application/json")
         connection.doOutput = true
@@ -543,66 +381,105 @@ private suspend fun chatWithEngine(
 
         val code = connection.responseCode
         val body = connection.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) {
-            EngineReply(localReply(prompt), false)
-        } else {
-            val json = JSONObject(body)
-            val content = (json.optJSONObject("message")?.optString("content", "").orEmpty())
-                .ifBlank { json.optString("response", "") }
-            if (content.isBlank()) {
-                EngineReply(localReply(prompt), false)
-            } else {
-                EngineReply(content.trim(), true)
-            }
-        }
+        if (code !in 200..299) return@withContext localReply(prompt)
+        val json = JSONObject(body)
+        val content = (json.optJSONObject("message")?.optString("content", "").orEmpty())
+            .ifBlank { json.optString("response", "") }
+        return@withContext content.trim().ifBlank { localReply(prompt) }
     } catch (e: IOException) {
-        EngineReply(localReply(prompt), false)
+        return@withContext localReply(prompt)
     } catch (e: Exception) {
-        EngineReply(localReply(prompt), false)
+        return@withContext localReply(prompt)
     } finally {
         connection?.disconnect()
     }
 }
 
-/** Built-in MeshLink answers when no local engine is reachable. */
+/** Built-in everyday answers — works instantly, even with no internet. */
 private fun localReply(question: String): String {
     val low = question.trim().lowercase()
     val base = when {
         Regex("^(hi|hello|salam|assalam|yo)\\b").containsMatchIn(low) ->
-            "Salam! Main MeshLink AI — your offline assistant. Ask me about chats, groups, calls or the mesh. 💜"
+            "Salam! 😊 Aaj kaise ho? Khaana, plan, mood ya koi bhi baat — main yahan hoon."
+
+        Regex("how are you|kaise ho|kya haal|what.?s up|kya chal raha").containsMatchIn(low) ->
+            "Main theek hoon, shukriya! 😊 Aap kaise ho? Aaj kya kar rahe ho?"
+
+        Regex("thank|shukriya|dhanyavaad").containsMatchIn(low) ->
+            "Koi baat nahi! 😊 Khush raho. Aur kya madad chahiye?"
+
+        Regex("who are you|kaun ho|tum kaun|your name").containsMatchIn(low) ->
+            "Main MeshLink AI hoon — aapka private daily assistant. Kisi bhi aam baat ke liye yahan hoon. 💜"
+
+        Regex("aaj.*khaya|today.*ate|maine.*khaya|kya khaya|kha liya|kha gaya").containsMatchIn(low) ->
+            "Accha! Aapne aaj kya khaya? 😊 Bata dijiye to main mood aur energy ke hisaab se kuch suggestion bhi de sakta hoon."
+
+        Regex("khana|khaana|food|lunch|dinner|breakfast|naashta|recipe|bhukha|bhookh|eat|swad").containsMatchIn(low) ->
+            "Khaana sabse important 😊. Agar kuch light chahiye to dal-chawal, khichdi ya omelette try karo. Thoda dahi/salad bhi add kar lo. Aapko aaj kya khane ka mann hai?"
+
+        Regex("thaka|thak gaya|tired|exhaust|neend|sleep|rest|borg").containsMatchIn(low) ->
+            "Thakan lagna bilkul normal hai. Thoda paani piyo, aankhon ko 10 minute aaram do, aur agar ho jaye to 20-minute ki chhoti neend. Aaj ka kaam thoda kam kar ke bhi chalega. 💜"
+
+        Regex("plan|schedule|today|kal|tomorrow|routine|kaam|work|office|meeting|padhai|study|exam").containsMatchIn(low) ->
+            "Chalo ek simple plan banate hain: 1) sabse zaroori kaam pehle, 2) 25-minute focus aur 5-minute break, 3) thoda walk aur paani, 4) shaam me 10-minute review. Aapka aaj ka sabse bada kaam kya hai?"
+
+        Regex("joke|mazaak|funny|hasana|laugh|chutkala").containsMatchIn(low) ->
+            "Ek chhota sa: maine fridge khola to andar se bill mila — 'Electricity department: payment pending.' 😄 Aur kya sunaoon?"
+
+        Regex("weather|mousam|barish|garmi|sardi|rain").containsMatchIn(low) ->
+            "Mere paas live weather data nahi hai, lekin aap phone ke weather app se check kar sakte ho. Agar barish ya garmi ho to paani aur suitable kapde saath rakhna. 🌦️"
+
+        Regex("health|sehat|diet|exercise|walk|gym|weight|dawa|medicine|fever|bukhar|dard").containsMatchIn(low) ->
+            "Sehat pehle. Paani, neend aur thoda movement sabse zyada farak dete hain. Agar fever ya dard ho to doctor se consult karna better. Main general tips de sakta hoon, medical diagnosis nahi. 💜"
+
+        Regex("family|ghar|mom|dad|friend|dost|saath|relationship").containsMatchIn(low) ->
+            "Aapke log sabse important hote hain. Unke saath thoda time, ek chhoti message ya shukriya bhi din bana deta hai. Aap kis ke baare me soch rahe ho?"
+
+        Regex("love|pyaar|crush|breakup|girlfriend|boyfriend").containsMatchIn(low) ->
+            "Pyaar me sab kuch natural hai — kabhi khushi, kabhi confusion. Honest baat karo, boundaries respect karo, aur apne feelings ko ignore mat karo. Aap kya feel kar rahe ho? 💜"
+
+        Regex("seekh|learn|skill|course|knowledge|samjho|seekhna").containsMatchIn(low) ->
+            "Aaj kuch chhota seekhne ka best tareeka: 20 minute theory, 20 minute practice, phir apne words me summarize. Consistency badi cheez se zyada important hai. Kya seekhna chahte ho?"
+
+        Regex("kya karun|what should i|suggest|help|decision|confuse|soch").containsMatchIn(low) ->
+            "Pehle deep saans lo. Do options likho, har ek ka ek plus aur ek minus, aur jo aapke aage ke liye sahi lage wo chuno. Aap mujhe thoda context de dijiye to main aur clear madad kar sakta hoon."
 
         Regex("summar|recap|overview|chats?|messages?").containsMatchIn(low) ->
-            "MeshLink keeps your chats in an encrypted local vault on this phone. Open the Chats tab to review conversations and unread messages — nothing is uploaded to a cloud. I can help draft a reply or explain any feature."
+            "MeshLink chats aapke phone par encrypted vault me rehti hain. Chats tab se conversations dekh sakte ho — kuch bhi cloud par upload nahi hota. Main reply draft karne me bhi madad kar sakta hoon."
 
         Regex("group|community|broadcast").containsMatchIn(low) ->
-            "Groups live on your device and sync through the mesh when peers are nearby. Create a group, add contacts by MeshLink ID, and messages relay hop-by-hop even with no internet."
+            "Groups aapke device par hote hain aur mesh ke through tab sync hote hain jab peers paas ho. MeshLink ID se log add karo; internet na ho to bhi messages hop-by-hop aage badhte hain."
 
         Regex("call|voice|video|ptt|walkie").containsMatchIn(low) ->
-            "Calls have 3 tiers: encrypted WebRTC audio/video when online, local Wi-Fi Direct / mesh P2P with push-to-talk, and an offline voice-note fallback that syncs later through the outbox."
+            "Calls ke 3 layer hain: online par encrypted WebRTC audio/video, local Wi-Fi Direct / mesh P2P with push-to-talk, aur offline voice-note jo baad me sync ho jata hai."
 
         Regex("offline|mesh|hotspot|lan|relay|radio").containsMatchIn(low) ->
-            "MeshLink has 3 layers: 1) online relay when internet is available, 2) local hotspot/LAN radio mesh (Bluetooth LE, Wi-Fi Direct, SMS) when it is not, 3) store-and-forward with dedupe so messages move automatically when connectivity returns."
+            "MeshLink ke 3 layer hain: 1) internet par online relay, 2) internet na ho to local hotspot/LAN mesh (Bluetooth LE, Wi-Fi Direct, SMS), 3) store-and-forward jo connectivity wapas aate hi messages bhej deta hai."
 
-        Regex("ai|model|engine|intelligence").containsMatchIn(low) ->
-            "I am MeshLink AI, your private assistant. I can use a local MeshLink AI engine when you configure one; otherwise my built-in responder answers instantly without uploading your chats."
+        Regex("(^| )ai( |$)|model|engine|intelligence|ollama").containsMatchIn(low) ->
+            "Main MeshLink AI hoon — aapka private assistant. Aam baat karo ya koi app feature samjho; koi setup ya server dikhane ki zarurat nahi. 💜"
 
         Regex("vault|pin|encrypt|secur|password|privacy|hack").containsMatchIn(low) ->
-            "Your vault uses AES-256-GCM with a PBKDF2-SHA256 key. A 6-digit app PIN adds a second layer and auto-locks after 5 minutes. Your email is only a security verification — your MeshLink ID stays your identity."
+            "Vault AES-256-GCM aur PBKDF2-SHA256 use karta hai. 6-digit app PIN doosra layer hai aur 5 minute baad auto-lock ho jata hai. Email sirf verification hai; pehchaan MeshLink ID hi hai."
 
         Regex("qr|link|web|device|login").containsMatchIn(low) ->
-            "QR linking pairs this phone with MeshLink Web: open Settings → Link device, scan the QR on the website, then approve it here. The session is short-lived and approval never shares your messages."
+            "QR linking phone ko MeshLink Web se pairs karta hai: Settings → Link device, website ka QR scan karo, phir yahan approve karo. Session short-lived hota hai aur messages share nahi hote."
 
-        Regex("id|identity|number|email").containsMatchIn(low) ->
-            "Your MeshLink ID is generated on this device and never changes. Your verified email is only a security check — it is not your identity and is never shown to the people you chat with."
+        Regex("identity|email|(^| )id( |$)|number").containsMatchIn(low) ->
+            "MeshLink ID isi device par banti hai aur kabhi nahi badalti. Verified email sirf security check hai — ye aapki pehchaan nahi hai aur chat me kabhi nahi dikhti."
 
         Regex("reply|draft|write|compose").containsMatchIn(low) ->
-            "Try: \"Bhai, message mil gaya — main 10 minute me reply karta hoon.\" Short, clear and warm. Want it more formal or more casual?"
+            "Try karo: \"Bhai, message mil gaya — main 10 minute me reply karta hoon.\" Short, clear aur warm. Aur formal ya casual chahiye?"
+
+        Regex("time|kitne baje|clock").containsMatchIn(low) ->
+            "Mere paas aapki local clock access nahi hai, lekin phone ki clock dekh lijiye. Chahein to main time management me madad kar sakta hoon. ⏰"
 
         else ->
-            "Main yahan hoon 💜. Ask me about chats, groups, calls, the offline mesh, vault/PIN security, or QR device linking — in English or Roman Urdu."
+            "Main yahan hoon 💜. Aam baat karo — khaana, plan, mood, padhai, kaam, jokes ya koi bhi confusion. English, Roman Urdu ya Hinglish, jo aapko aasan lage."
     }
     val emotion = detectEmotion(question)
     return when (emotion) {
+        "tired" -> "Thoda aaram kar lo — aapki thakan samajh sakti hoon. 💜 " + base
         "sad" -> "I'm sorry you're feeling low right now. 💜 " + base
         "angry" -> "I understand the frustration. Let's handle it step by step. 💜 " + base
         "anxious" -> "Take a breath — we'll sort this out together. 💜 " + base
@@ -615,9 +492,10 @@ private fun localReply(question: String): String {
 private fun detectEmotion(text: String): String {
     val low = text.trim().lowercase()
     return when {
-        Regex("sad|cry|dukhi|depress|lonely|broken|tired|rona|khush nahi|upset").containsMatchIn(low) -> "sad"
+        Regex("thaka|thak gaya|tired|exhaust|neend a").containsMatchIn(low) -> "tired"
+        Regex("sad|cry|dukhi|depress|lonely|broken|rona|khush nahi|upset").containsMatchIn(low) -> "sad"
         Regex("angry|gussa|furious|hate|pagal|bhadwa|irritat").containsMatchIn(low) -> "angry"
-        Regex("anxious|worried|tension|stress|pareshan|nervous|scared|dar|panic").containsMatchIn(low) -> "anxious"
+        Regex("anxious|worried|tension|stress|pareshan|nervous|scared|panic").containsMatchIn(low) -> "anxious"
         Regex("happy|khush|great|awesome|love|shukriya|thanks|excited|mast").containsMatchIn(low) -> "happy"
         else -> "neutral"
     }

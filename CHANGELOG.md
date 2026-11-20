@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.30.0 — 2026-11-20 — everyday AI, clean chat UI
+
+### Changed
+- MeshLink AI is now a private everyday assistant for normal conversation:
+  food, plans, mood, study, work, health, jokes and small talk in Roman Urdu,
+  English or Hinglish. Built-in replies also stay emotionally aware.
+- Removed the visible model picker, engine URL field and online/offline chip —
+  no Ollama/server details are shown. A local engine, if available, is used
+  silently; the built-in responder always works offline.
+
 ## 1.29.0 — 2026-11-20 — in-app updates + emotion-aware AI
 
 ### Added
