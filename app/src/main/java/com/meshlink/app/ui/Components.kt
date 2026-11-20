@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,8 +79,7 @@ fun initials(name: String): String {
     }
 }
 
-/** Mhzaly mark: a chat bubble carrying a bold "M" and a small spark.
- * Drawn with Compose primitives so it stays crisp at every size. */
+/** Mhzaly mark: a bold white M on a violet squircle with a mint message dot. */
 @Composable
 fun MeshMark(size: Dp = 40.dp) {
     val radius = size * 0.30f
@@ -94,7 +95,7 @@ fun MeshMark(size: Dp = 40.dp) {
             .clip(RoundedCornerShape(radius))
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFFA78BFA), BrandViolet, BrandDeep),
+                    listOf(Color(0xFF8B5CF6), BrandViolet, BrandDeep),
                 ),
             )
             .border(
@@ -102,73 +103,34 @@ fun MeshMark(size: Dp = 40.dp) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(size * 0.62f)) {
-            val s = size.toPx() * 0.62f
-            val bubbleTop = s * 0.17f
-            val bubbleH = s * 0.60f
-
-            // White speech bubble with a soft tail.
-            drawRoundRect(
-                color = Color.White,
-                topLeft = Offset(s * 0.11f, bubbleTop),
-                size = Size(s * 0.78f, bubbleH),
-                cornerRadius = CornerRadius(s * 0.20f),
-            )
-            val tail = Path().apply {
-                moveTo(s * 0.27f, bubbleTop + bubbleH - s * 0.03f)
-                lineTo(s * 0.19f, bubbleTop + bubbleH + s * 0.17f)
-                lineTo(s * 0.44f, bubbleTop + bubbleH - s * 0.03f)
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val s = size.toPx()
+            val m = Path().apply {
+                moveTo(s * 0.259f, s * 0.704f)
+                lineTo(s * 0.259f, s * 0.278f)
+                lineTo(s * 0.333f, s * 0.278f)
+                lineTo(s * 0.500f, s * 0.556f)
+                lineTo(s * 0.667f, s * 0.278f)
+                lineTo(s * 0.741f, s * 0.278f)
+                lineTo(s * 0.741f, s * 0.704f)
+                lineTo(s * 0.667f, s * 0.704f)
+                lineTo(s * 0.667f, s * 0.444f)
+                lineTo(s * 0.530f, s * 0.667f)
+                lineTo(s * 0.470f, s * 0.667f)
+                lineTo(s * 0.333f, s * 0.444f)
+                lineTo(s * 0.333f, s * 0.704f)
                 close()
             }
-            drawPath(tail, Color.White)
-
-            // Bold "M" for Mhzaly, in the brand violet.
-            val mStroke = s * 0.075f
-            val mTop = s * 0.31f
-            val mBottom = s * 0.64f
-            drawLine(
-                color = Color(0xFF5B21B6),
-                start = Offset(s * 0.27f, mBottom),
-                end = Offset(s * 0.27f, mTop),
-                strokeWidth = mStroke,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color = Color(0xFF5B21B6),
-                start = Offset(s * 0.27f, mTop),
-                end = Offset(s * 0.50f, s * 0.56f),
-                strokeWidth = mStroke,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color = Color(0xFF5B21B6),
-                start = Offset(s * 0.50f, s * 0.56f),
-                end = Offset(s * 0.73f, mTop),
-                strokeWidth = mStroke,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color = Color(0xFF5B21B6),
-                start = Offset(s * 0.73f, mTop),
-                end = Offset(s * 0.73f, mBottom),
-                strokeWidth = mStroke,
-                cap = StrokeCap.Round,
-            )
-
-            // Small mint spark: a distinctive accent on the dark violet tile.
-            val star = Path().apply {
-                moveTo(s * 0.79f, s * 0.12f)
-                lineTo(s * 0.82f, s * 0.20f)
-                lineTo(s * 0.90f, s * 0.23f)
-                lineTo(s * 0.82f, s * 0.26f)
-                lineTo(s * 0.79f, s * 0.34f)
-                lineTo(s * 0.76f, s * 0.26f)
-                lineTo(s * 0.68f, s * 0.23f)
-                lineTo(s * 0.76f, s * 0.20f)
-                close()
-            }
-            drawPath(star, Color(0xFF6EE7B7))
+            drawPath(m, Color.White)
         }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = -(size * 0.06f), y = size * 0.12f)
+                .size(size * 0.14f)
+                .clip(CircleShape)
+                .background(Color(0xFF34D399)),
+        )
     }
 }
 

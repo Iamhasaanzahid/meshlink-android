@@ -103,8 +103,7 @@ fun AiScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .statusBarsPadding(),
+                .padding(padding),
         ) {
             // Header now scrolls with the conversation (no fixed purple bar).
             // ---------------------------------------------------- messages

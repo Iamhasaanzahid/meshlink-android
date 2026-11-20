@@ -159,7 +159,6 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {

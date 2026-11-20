@@ -691,7 +691,8 @@ fun HomeScreen(
         ) {
         Scaffold(
             topBar = {
-                if (tab != 3 && tab != 7) {
+                // No fixed purple bar anywhere — each screen owns its own header.
+                if (tab == -1) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -945,7 +946,7 @@ fun HomeScreen(
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            Box(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) {
                 when (tab) {
                     0 -> Column {
                         ChatListScreen(

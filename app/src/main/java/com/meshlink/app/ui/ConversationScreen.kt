@@ -350,11 +350,8 @@ fun ConversationScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(tokens.headerStart, tokens.headerMid, tokens.headerEnd),
-                        ),
-                    ),
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, tokens.hairline),
             ) {
                 Box(
                     modifier = Modifier
@@ -364,14 +361,14 @@ fun ConversationScreen(
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
-                                listOf(Color.White.copy(alpha = 0.2f), Color.Transparent),
+                                listOf(Color.White.copy(alpha = 0.05f), Color.Transparent),
                             ),
                         ),
                 )
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
                 title = {
@@ -383,14 +380,14 @@ fun ConversationScreen(
                                 chatTitle(chat),
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 if (peerTyping) "typing…" else "Mhzaly ID · ${chat.peer}",
                                 fontSize = 11.sp,
-                                color = if (peerTyping) BrandMint else Color.White.copy(alpha = 0.75f),
+                                color = if (peerTyping) BrandMint else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = if (peerTyping) FontWeight.SemiBold else FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -400,26 +397,26 @@ fun ConversationScreen(
                 },
                 actions = {
                     IconButton(onClick = { searchOpen = !searchOpen }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search messages", tint = Color.White)
+                        Icon(Icons.Filled.Search, contentDescription = "Search messages", tint = MaterialTheme.colorScheme.onSurface)
                     }
                     IconButton(
                         onClick = { onCall(chat.peer, chatTitle(chat)) },
                         modifier = Modifier
                             .padding(end = 4.dp)
                             .size(48.dp)
-                            .background(Color.White.copy(alpha = 0.16f), CircleShape)
-                            .border(1.dp, Color.White.copy(alpha = 0.26f), CircleShape),
+                            .background(tokens.glass, CircleShape)
+                            .border(1.dp, tokens.glassBorder, CircleShape),
                     ) {
                         Icon(
                             Icons.Filled.Call,
                             contentDescription = "Call",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(20.dp),
                         )
                     }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White)
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurface)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(

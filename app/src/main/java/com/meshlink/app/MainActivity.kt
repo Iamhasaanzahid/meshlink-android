@@ -1,5 +1,6 @@
 package com.meshlink.app
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +27,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Full-screen incoming call: show over lock screen and wake the phone.
+        if (intent.getBooleanExtra(CallActionReceiver.OPEN_ONLINE_CALL, false) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
+        ) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
 
         // Local database (chats, messages, calls, contacts).
         ChatRepository.init(this)

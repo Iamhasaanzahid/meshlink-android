@@ -9,6 +9,12 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -144,7 +150,10 @@ fun OnlineCallScreen(onClose: () -> Unit) {
         }
     }
 
-    fun acceptCall() = withCamera { withMic { OnlineCallManager.acceptRelayed() } }
+    fun acceptCall() {
+        if (ui.video) withCamera { withMic { OnlineCallManager.acceptRelayed() } }
+        else withMic { OnlineCallManager.acceptRelayed() }
+    }
 
     fun close() {
         // Closing the UI must not leave the other phone ringing forever.
@@ -324,92 +333,31 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                     }
 
                     Phase.DIALING -> {
-                        Spacer(Modifier.height(30.dp))
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "Calling ${ui.remoteName.ifBlank { "the other phone" }}…",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
+                        RelayedCallHero(
+                            name = ui.remoteName.ifBlank { "the other phone" },
+                            status = "Calling over the internet…",
+                            video = ui.video,
+                            onAccept = null,
+                            onDecline = {
+                                OnlineCallManager.hangup()
+                                onClose()
+                            },
+                            declineLabel = "Cancel",
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Ringing over the internet · encrypted end to end",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(40.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            CallControl(
-                                icon = Icons.Filled.CallEnd,
-                                label = "Cancel",
-                                active = true,
-                                danger = true,
-                                onClick = {
-                                    OnlineCallManager.hangup()
-                                    onClose()
-                                },
-                            )
-                        }
                     }
 
                     Phase.RINGING -> {
-                        Spacer(Modifier.height(20.dp))
-                        Text(
-                            ui.remoteName.ifBlank { "Mhzaly call" },
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 24.sp,
+                        RelayedCallHero(
+                            name = ui.remoteName.ifBlank { "Mhzaly call" },
+                            status = "Incoming Mhzaly call · encrypted",
+                            video = ui.video,
+                            onAccept = { acceptCall() },
+                            onDecline = {
+                                OnlineCallManager.declineRelayed()
+                                onClose()
+                            },
+                            declineLabel = "Decline",
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Incoming Mhzaly call",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            fontSize = 15.sp,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "over the internet · encrypted end to end",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(44.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            CallControl(
-                                icon = Icons.Filled.Call,
-                                label = "Accept",
-                                active = true,
-                                onClick = {
-                                    withMic { OnlineCallManager.acceptRelayed() }
-                                },
-                            )
-                            CallControl(
-                                icon = Icons.Filled.CallEnd,
-                                label = "Decline",
-                                active = true,
-                                danger = true,
-                                onClick = {
-                                    OnlineCallManager.declineRelayed()
-                                    onClose()
-                                },
-                            )
-                        }
                     }
 
                     Phase.PREPARING -> {
@@ -614,6 +562,137 @@ private fun CodeBox(code: String) {
             fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
         )
+    }
+}
+
+@Composable
+private fun RelayedCallHero(
+    name: String,
+    status: String,
+    video: Boolean,
+    onAccept: (() -> Unit)?,
+    onDecline: () -> Unit,
+    declineLabel: String,
+) {
+    val pulse = rememberInfiniteTransition(label = "callPulse")
+    val ring1 by pulse.animateFloat(
+        1f, 1.5f,
+        infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "ring1",
+    )
+    val fade1 by pulse.animateFloat(
+        0.32f, 0f,
+        infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "fade1",
+    )
+    val ring2 by pulse.animateFloat(
+        1f, 1.85f,
+        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "ring2",
+    )
+    val fade2 by pulse.animateFloat(
+        0.22f, 0f,
+        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "fade2",
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF0B0716), Color(0xFF1C1338), Color(0xFF2C1B5E)),
+                ),
+            )
+            .padding(horizontal = 24.dp, vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MeshMark(size = 28.dp)
+            Spacer(Modifier.size(10.dp))
+            Text(
+                "Mhzaly",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .size(150.dp * ring2)
+                        .clip(CircleShape)
+                        .background(Color(0xFF8B5CF6).copy(alpha = fade2)),
+                )
+                Box(
+                    Modifier
+                        .size(130.dp * ring1)
+                        .clip(CircleShape)
+                        .background(Color(0xFF34D399).copy(alpha = fade1)),
+                )
+                Avatar(name, size = 112.dp)
+            }
+            Spacer(Modifier.height(28.dp))
+            Text(
+                name,
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                status,
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            if (onAccept != null) {
+                HeroCallButton(
+                    icon = Icons.Filled.Call,
+                    label = "Accept",
+                    color = Color(0xFF25D366),
+                    onClick = onAccept,
+                )
+            }
+            HeroCallButton(
+                icon = Icons.Filled.CallEnd,
+                label = declineLabel,
+                color = Color(0xFFEA4335),
+                onClick = onDecline,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroCallButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier
+                .size(76.dp)
+                .clip(CircleShape)
+                .background(color),
+        ) {
+            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(32.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(label, color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
     }
 }
 

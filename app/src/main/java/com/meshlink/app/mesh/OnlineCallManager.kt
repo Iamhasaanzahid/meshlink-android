@@ -22,7 +22,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.meshlink.app.CallActionReceiver
 import com.meshlink.app.MainActivity
+import com.meshlink.app.R
 import com.meshlink.app.data.SessionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -142,6 +144,8 @@ object OnlineCallManager {
     private var exportRunnable: Runnable? = null
     private var ringTimeout: Runnable? = null
     private var pendingOffer: String? = null
+    /** User accepted before the SDP offer arrived; finish as soon as it does. */
+    private var pendingAccept = false
     private var factoryInitialized = false
     private var focusRequest: AudioFocusRequest? = null
     private var ringtone: Ringtone? = null
@@ -547,6 +551,10 @@ object OnlineCallManager {
         )
         enterAudioMode()
         armRingTimeout(id)
+        // Ring the other phone immediately. The SDP offer follows as soon as
+        // WebRTC is ready, so the callee sees the call instead of waiting in
+        // silence while ICE/TURN gathers.
+        signal(target, ringJson(id, _state.value.remoteName, video), critical = true)
         try {
             val pc = newPeerConnection(video)
             pc.createOffer(object : SdpObserver {
@@ -584,12 +592,17 @@ object OnlineCallManager {
     /** Answers a ringing internet call. */
     fun acceptRelayed() {
         val s = _state.value
-        if (s.phase != Phase.RINGING || !s.relayed) return
+        if (!s.relayed) return
+        if (s.phase != Phase.RINGING && !(s.phase == Phase.CONNECTING && pendingAccept)) return
         val offer = pendingOffer
         if (offer.isNullOrBlank()) {
-            fail("This call offer is no longer valid")
+            // Ring arrived before SDP. Keep the call alive and continue as soon
+            // as the offer lands, instead of showing a fake error.
+            pendingAccept = true
+            _state.value = s.copy(phase = Phase.CONNECTING, message = "Call connect ho raha hai…")
             return
         }
+        pendingAccept = false
         if (!micGranted()) {
             signal(s.peer, simpleJson("reject", s.callId))
             fail("Microphone permission is needed to answer. Allow it and try again.")
@@ -670,6 +683,34 @@ object OnlineCallManager {
             if (id.isBlank()) return@post
             val current = _state.value
             when (action) {
+                "ring" -> {
+                    // Instant ring tone/UI, before the SDP offer arrives.
+                    val busy = current.phase != Phase.IDLE &&
+                        current.phase != Phase.ENDED &&
+                        current.phase != Phase.FAILED
+                    if (busy) {
+                        signal(from, simpleJson("reject", id))
+                        return@post
+                    }
+                    stopRinging()
+                    pendingOffer = null
+                    pendingAccept = false
+                    val name = json.optString("n").ifBlank { from }
+                    _state.value = Ui(
+                        phase = Phase.RINGING,
+                        role = Role.CALLEE,
+                        remoteName = name,
+                        relayed = true,
+                        peer = from,
+                        callId = id,
+                        video = json.optBoolean("video", false),
+                        message = "Call connect ho raha hai…",
+                    )
+                    startRinging()
+                    showIncomingNotification(name, from, json.optBoolean("video", false))
+                    armRingTimeout(id)
+                }
+
                 "reoffer" -> {
                     // Automatic ICE restart from the other phone. Keep the same
                     // call UI and just swap the new offer/answer.
@@ -739,32 +780,46 @@ object OnlineCallManager {
                 }
 
                 "offer" -> {
+                    // A "ring" may already have opened this call. Only reject
+                    // genuinely different calls.
+                    val samePending = current.relayed && current.callId == id &&
+                        (current.phase == Phase.RINGING || current.phase == Phase.CONNECTING)
                     val busy = current.phase != Phase.IDLE &&
                         current.phase != Phase.ENDED &&
-                        current.phase != Phase.FAILED
+                        current.phase != Phase.FAILED &&
+                        !samePending
                     if (busy) {
                         signal(from, simpleJson("reject", id))
                         return@post
                     }
                     val sdp = json.optString("sdp")
                     if (sdp.isBlank()) return@post
-                    // A second offer for the same (or a previous) call must not
-                    // restart the ringer on top of the current incoming call.
-                    stopRinging()
                     pendingOffer = sdp
-                    val name = json.optString("n").ifBlank { from }
-                    _state.value = Ui(
-                        phase = Phase.RINGING,
-                        role = Role.CALLEE,
-                        remoteName = name,
-                        relayed = true,
-                        peer = from,
-                        callId = id,
-                        video = json.optBoolean("video", false),
-                    )
-                    startRinging()
-                    showIncomingNotification(name, from, json.optBoolean("video", false))
-                    armRingTimeout(id)
+                    if (!samePending) {
+                        stopRinging()
+                        val name = json.optString("n").ifBlank { from }
+                        _state.value = Ui(
+                            phase = Phase.RINGING,
+                            role = Role.CALLEE,
+                            remoteName = name,
+                            relayed = true,
+                            peer = from,
+                            callId = id,
+                            video = json.optBoolean("video", false),
+                            message = "Call connect ho raha hai…",
+                        )
+                        startRinging()
+                        showIncomingNotification(name, from, json.optBoolean("video", false))
+                        armRingTimeout(id)
+                    } else {
+                        _state.value = current.copy(message = null)
+                    }
+                    // If the user already pressed Accept while SDP was in
+                    // flight, finish the handshake now instead of failing.
+                    if (pendingAccept) {
+                        pendingAccept = false
+                        acceptRelayed()
+                    }
                 }
 
                 "answer" -> {
@@ -876,22 +931,50 @@ object OnlineCallManager {
                 }
             }
             val intent = Intent(ctx, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+                putExtra(CallActionReceiver.OPEN_ONLINE_CALL, true)
             }
-            val pending = PendingIntent.getActivity(
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val pending = PendingIntent.getActivity(ctx, CALL_NOTIFICATION_ID, intent, flags)
+            val acceptPending = PendingIntent.getBroadcast(
                 ctx,
-                CALL_NOTIFICATION_ID,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                CALL_NOTIFICATION_ID + 1,
+                Intent(ctx, CallActionReceiver::class.java).setAction(CallActionReceiver.ACTION_ACCEPT),
+                flags,
+            )
+            val declinePending = PendingIntent.getBroadcast(
+                ctx,
+                CALL_NOTIFICATION_ID + 2,
+                Intent(ctx, CallActionReceiver::class.java).setAction(CallActionReceiver.ACTION_DECLINE),
+                flags,
             )
             val notification = NotificationCompat.Builder(ctx, CALL_CHANNEL_ID)
-                .setSmallIcon(ctx.applicationInfo.icon)
+                .setSmallIcon(R.drawable.ic_meshlink_notification)
                 .setContentTitle(if (video) "Incoming video call" else "Incoming Mhzaly call")
-                .setContentText(name.ifBlank { peer })
+                .setContentText("${name.ifBlank { peer }} · tap to open")
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setOngoing(true)
                 .setContentIntent(pending)
+                .setFullScreenIntent(pending, true)
+                .addAction(
+                    NotificationCompat.Action.Builder(
+                        android.R.drawable.ic_menu_call,
+                        "Accept",
+                        acceptPending,
+                    ).build(),
+                )
+                .addAction(
+                    NotificationCompat.Action.Builder(
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                        "Decline",
+                        declinePending,
+                    ).build(),
+                )
                 .build()
             NotificationManagerCompat.from(ctx).notify(CALL_NOTIFICATION_ID, notification)
         }
@@ -932,6 +1015,16 @@ object OnlineCallManager {
                 .put("a", action)
                 .put("id", id)
                 .put("sdp", description)
+                .toString()
+        }.getOrDefault("")
+
+    private fun ringJson(id: String, name: String, video: Boolean): String =
+        runCatching {
+            JSONObject()
+                .put("a", "ring")
+                .put("id", id)
+                .put("n", name)
+                .put("video", video)
                 .toString()
         }.getOrDefault("")
 
@@ -1115,6 +1208,8 @@ object OnlineCallManager {
         cancelRingTimeout()
         unbindRenderers()
         pendingOffer = null
+        pendingAccept = false
+        iceRestarts = 0
         pendingIce.clear()
         remoteDescriptionSet = false
         runCatching { audioTrack?.setEnabled(false) }

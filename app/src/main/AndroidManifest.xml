@@ -42,6 +42,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Incoming calls must appear over the lock screen like a phone call. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- In-app updates: install a downloaded APK. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -94,6 +96,16 @@
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Accept / decline an incoming internet call from the lock screen. -->
+        <receiver
+            android:name=".CallActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.meshlink.app.ACCEPT_CALL" />
+                <action android:name="com.meshlink.app.DECLINE_CALL" />
             </intent-filter>
         </receiver>
 
