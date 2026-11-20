@@ -691,7 +691,7 @@ fun HomeScreen(
         ) {
         Scaffold(
             topBar = {
-                if (tab != 3) {
+                if (tab != 3 && tab != 7) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1092,6 +1092,7 @@ fun HomeScreen(
                             wifiPeers = engine?.wifiPeers() ?: emptyList()
                         },
                         onExportChats = { exportLauncher.launch("mhzaly-backup.json") },
+                        onOpenMenu = { scope.launch { drawerState.open() } },
                         onLogout = onLogout,
                     )
                 }

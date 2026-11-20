@@ -60,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -187,6 +188,14 @@ fun OnlineCallScreen(onClose: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surface,
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            ),
+                        ),
+                    )
                     .verticalScroll(rememberScrollState())
                     .padding(18.dp),
             ) {
@@ -200,7 +209,7 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Online call", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         Text(
-                            "Encrypted call over the internet · TURN fallback for mobile data",
+                            "Encrypted call · mobile data, hotspot ya Wi-Fi par bhi",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -306,9 +315,9 @@ fun OnlineCallScreen(onClose: () -> Unit) {
 
                         Spacer(Modifier.height(14.dp))
                         Text(
-                            "Honest note: a few very strict mobile networks block direct " +
-                                "peer-to-peer audio. If a call cannot connect, switch one phone to " +
-                                "Wi-Fi or a hotspot and try again. No free relay server is included.",
+                            "Mobile data, hotspot ya Wi-Fi — kisi bhi signal par call chalane ke " +
+                                "liye kai relay routes automatically try kiye jate hain. " +
+                                "Agar pehla raasta block ho to call khud hi dobara connect hoti hai.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -383,6 +392,14 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                             horizontalArrangement = Arrangement.SpaceEvenly,
                         ) {
                             CallControl(
+                                icon = Icons.Filled.Call,
+                                label = "Accept",
+                                active = true,
+                                onClick = {
+                                    withMic { OnlineCallManager.acceptRelayed() }
+                                },
+                            )
+                            CallControl(
                                 icon = Icons.Filled.CallEnd,
                                 label = "Decline",
                                 active = true,
@@ -390,14 +407,6 @@ fun OnlineCallScreen(onClose: () -> Unit) {
                                 onClick = {
                                     OnlineCallManager.declineRelayed()
                                     onClose()
-                                },
-                            )
-                            CallControl(
-                                icon = Icons.Filled.Call,
-                                label = "Accept",
-                                active = true,
-                                onClick = {
-                                    withMic { OnlineCallManager.acceptRelayed() }
                                 },
                             )
                         }
@@ -629,7 +638,7 @@ private fun CallControl(
         IconButton(
             onClick = onClick,
             modifier = Modifier
-                .size(64.dp)
+                .size(72.dp)
                 .background(bg, RoundedCornerShape(50)),
         ) {
             Icon(icon, contentDescription = label, tint = fg)

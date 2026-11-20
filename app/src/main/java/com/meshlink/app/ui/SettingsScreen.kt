@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,12 +23,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -93,6 +98,7 @@ fun SettingsScreen(
     onConnectPeer: (WifiP2pDevice) -> Unit,
     onRefreshPeers: () -> Unit,
     onExportChats: () -> Unit = {},
+    onOpenMenu: () -> Unit = {},
     onLogout: () -> Unit,
 ) {
     var phoneDraft by remember(myPhone) { mutableStateOf(myPhone) }
@@ -136,11 +142,11 @@ fun SettingsScreen(
         while (manualSession.isNotBlank()) {
             val result = QrLink.manualStatus(manualSession)
             result.onSuccess { info ->
-                val status = info.optString("status", "pending")
+                val pairState = info.optString("status", "pending")
                 manualState = when {
-                    status == "approved" -> "approved"
-                    status == "claimed" || info.optBoolean("claimed") -> "claimed"
-                    status == "expired" -> "expired"
+                    pairState == "approved" -> "approved"
+                    pairState == "claimed" || info.optBoolean("claimed") -> "claimed"
+                    pairState == "expired" -> "expired"
                     else -> "waiting"
                 }
             }.onFailure { manualState = "expired" }
@@ -153,9 +159,26 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onOpenMenu) {
+                Icon(
+                    Icons.Filled.Menu,
+                    contentDescription = "Open menu",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                "Settings",
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+
         // Profile card — the same gradient identity as the chat header.
         Card(
             modifier = Modifier.fillMaxWidth(),

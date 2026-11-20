@@ -94,7 +94,8 @@ fun AiScreen(onBack: () -> Unit) {
     }
 
     LaunchedEffect(messages.size, isTyping) {
-        val last = if (isTyping) messages.size else messages.size - 1
+        // Index 0 is the scrolling header card.
+        val last = if (isTyping) messages.size + 1 else messages.size
         if (last >= 0) listState.animateScrollToItem(last)
     }
 
@@ -102,70 +103,10 @@ fun AiScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .statusBarsPadding(),
         ) {
-            // ------------------------------------------------ purple header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(BrandDeep, BrandViolet, BrandLight),
-                        ),
-                    )
-                    .padding(horizontal = 12.dp, vertical = 16.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                        )
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Mhzaly AI",
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            "Private everyday assistant",
-                            color = Color.White.copy(alpha = 0.88f),
-                            fontSize = 12.sp,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            messages.clear()
-                            messages.add(
-                                AiMessage(
-                                    "assistant",
-                                    "Chat clear ho gaya. Ab kya baat karein? 💜",
-                                ),
-                            )
-                        },
-                    ) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "Clear chat",
-                            tint = Color.White,
-                        )
-                    }
-                }
-            }
-
-            // -------------------------------------------------- chat header
-            Text(
-                "Daily chat",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-
+            // Header now scrolls with the conversation (no fixed purple bar).
             // ---------------------------------------------------- messages
             LazyColumn(
                 state = listState,
@@ -175,6 +116,67 @@ fun AiScreen(onBack: () -> Unit) {
                     .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(BrandDeep, BrandViolet, BrandLight),
+                                ),
+                            )
+                            .clip(RoundedCornerShape(20.dp))
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = Color.White,
+                                )
+                            }
+                            Spacer(Modifier.width(2.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Mhzaly AI",
+                                    color = Color.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    "Private everyday assistant",
+                                    color = Color.White.copy(alpha = 0.88f),
+                                    fontSize = 11.sp,
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    messages.clear()
+                                    messages.add(
+                                        AiMessage(
+                                            "assistant",
+                                            "Chat clear ho gaya. Ab kya baat karein? 💜",
+                                        ),
+                                    )
+                                },
+                            ) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "Clear chat",
+                                    tint = Color.White,
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        "Daily chat",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                    )
+                }
                 items(messages) { message -> ChatBubble(message) }
                 if (isTyping) {
                     item { TypingBubble() }

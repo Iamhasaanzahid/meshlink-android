@@ -149,6 +149,8 @@ object OnlineCallManager {
     /** ICE candidates that arrive before the remote description is installed. */
     private val pendingIce = mutableListOf<IceCandidate>()
     private var remoteDescriptionSet = false
+    /** Automatic ICE-restart attempts when a mobile network blocks the first path. */
+    private var iceRestarts = 0
 
     /**
      * Set by MeshService: publishes one WebRTC signalling message to
@@ -209,22 +211,24 @@ object OnlineCallManager {
     private fun iceServers(): List<PeerConnection.IceServer> = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
-        // Free public TURN relay (Open Relay / Metered). STUN alone fails on
-        // mobile data behind carrier-grade NAT; TURN makes the call connect
-        // anyway. Media stays DTLS-SRTP encrypted end to end — the relay only
-        // forwards sealed packets and cannot listen.
+        PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer(),
+        PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
+        // Multiple public TURN transports. Strict mobile/CGNAT networks often
+        // block peer-to-peer UDP, so calls relay over TCP 443 / TLS 443 too.
+        // Media stays DTLS-SRTP encrypted; the relay only forwards sealed
+        // packets and cannot listen.
         PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
-            .setUsername("openrelayproject")
-            .setPassword("openrelayproject")
-            .createIceServer(),
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80?transport=tcp")
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
         PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
-            .setUsername("openrelayproject")
-            .setPassword("openrelayproject")
-            .createIceServer(),
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
         PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
-            .setUsername("openrelayproject")
-            .setPassword("openrelayproject")
-            .createIceServer(),
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
+        PeerConnection.IceServer.builder("turns:openrelay.metered.ca:443?transport=tcp")
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
+        PeerConnection.IceServer.builder("turn:relay.metered.ca:80?transport=tcp")
+            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
     )
 
     private val observer = object : PeerConnection.Observer {
@@ -235,10 +239,18 @@ object OnlineCallManager {
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED -> onConnected()
 
-                PeerConnection.IceConnectionState.FAILED -> fail(
-                    "Could not reach the other phone. Both phones must be online. " +
-                        "Some strict mobile networks block direct calls — try Wi-Fi or a hotspot."
-                )
+                PeerConnection.IceConnectionState.FAILED -> {
+                    val s = _state.value
+                    if (s.relayed && iceRestarts < 2 &&
+                        (s.phase == Phase.DIALING || s.phase == Phase.CONNECTING ||
+                            s.phase == Phase.PREPARING)
+                    ) {
+                        iceRestarts++
+                        restartIceWithRenegotiation()
+                    } else {
+                        fail("Call connect nahi hua. Dobara try karein.")
+                    }
+                }
 
                 else -> Unit
             }
@@ -658,6 +670,74 @@ object OnlineCallManager {
             if (id.isBlank()) return@post
             val current = _state.value
             when (action) {
+                "reoffer" -> {
+                    // Automatic ICE restart from the other phone. Keep the same
+                    // call UI and just swap the new offer/answer.
+                    if (current.callId != id ||
+                        current.phase == Phase.IDLE || current.phase == Phase.ENDED ||
+                        current.phase == Phase.FAILED
+                    ) return@post
+                    val sdp = json.optString("sdp")
+                    val pc = peerConnection
+                    if (sdp.isBlank() || pc == null) return@post
+                    pc.setRemoteDescription(
+                        object : SdpObserver {
+                            override fun onSetSuccess() {
+                                remoteDescriptionSet = true
+                                flushPendingIce()
+                                pc.createAnswer(
+                                    object : SdpObserver {
+                                        override fun onCreateSuccess(desc: SessionDescription?) {
+                                            if (desc == null) return
+                                            pc.setLocalDescription(
+                                                object : SdpObserver {
+                                                    override fun onSetSuccess() = Unit
+                                                    override fun onSetFailure(error: String?) =
+                                                        fail(error ?: "Call connect nahi hua. Dobara try karein.")
+                                                    override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                                                    override fun onCreateFailure(error: String?) = Unit
+                                                },
+                                                desc,
+                                            )
+                                            signal(from, sdpJson("reanswer", id, desc.description), critical = true)
+                                        }
+                                        override fun onCreateFailure(error: String?) =
+                                            fail(error ?: "Call connect nahi hua. Dobara try karein.")
+                                        override fun onSetSuccess() = Unit
+                                        override fun onSetFailure(error: String?) = Unit
+                                    },
+                                    MediaConstraints(),
+                                )
+                            }
+                            override fun onSetFailure(error: String?) =
+                                fail(error ?: "Call connect nahi hua. Dobara try karein.")
+                            override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                            override fun onCreateFailure(error: String?) = Unit
+                        },
+                        SessionDescription(SessionDescription.Type.OFFER, sdp),
+                    )
+                }
+
+                "reanswer" -> {
+                    if (current.callId != id) return@post
+                    val sdp = json.optString("sdp")
+                    val pc = peerConnection
+                    if (sdp.isBlank() || pc == null) return@post
+                    pc.setRemoteDescription(
+                        object : SdpObserver {
+                            override fun onSetSuccess() {
+                                remoteDescriptionSet = true
+                                flushPendingIce()
+                            }
+                            override fun onSetFailure(error: String?) =
+                                fail(error ?: "Call connect nahi hua. Dobara try karein.")
+                            override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                            override fun onCreateFailure(error: String?) = Unit
+                        },
+                        SessionDescription(SessionDescription.Type.ANSWER, sdp),
+                    )
+                }
+
                 "offer" -> {
                     val busy = current.phase != Phase.IDLE &&
                         current.phase != Phase.ENDED &&
@@ -845,6 +925,61 @@ object OnlineCallManager {
     private fun simpleJson(action: String, id: String): String =
         runCatching { JSONObject().put("a", action).put("id", id).toString() }
             .getOrDefault("{\"a\":\"$action\",\"id\":\"$id\"}")
+
+    private fun sdpJson(action: String, id: String, description: String): String =
+        runCatching {
+            JSONObject()
+                .put("a", action)
+                .put("id", id)
+                .put("sdp", description)
+                .toString()
+        }.getOrDefault("")
+
+    /**
+     * A mobile/CGNAT network can block the first ICE path. Restart ICE and
+     * renegotiate on the same call id, preferring the TURN/TCP routes that work
+     * on strict networks. The UI stays on "Connecting" instead of showing a
+     * dead end.
+     */
+    private fun restartIceWithRenegotiation() {
+        val pc = peerConnection
+        val s = _state.value
+        if (pc == null || !s.relayed || s.peer.isBlank() || s.callId.isBlank()) {
+            fail("Call connect nahi hua. Dobara try karein.")
+            return
+        }
+        _state.value = s.copy(
+            phase = Phase.CONNECTING,
+            message = "Network change karke dobara connect ho raha hai…",
+        )
+        runCatching { pc.restartIce() }
+        pc.createOffer(
+            object : SdpObserver {
+                override fun onCreateSuccess(desc: SessionDescription?) {
+                    if (desc == null) {
+                        fail("Call connect nahi hua. Dobara try karein.")
+                        return
+                    }
+                    pc.setLocalDescription(
+                        object : SdpObserver {
+                            override fun onSetSuccess() = Unit
+                            override fun onSetFailure(error: String?) =
+                                fail(error ?: "Call connect nahi hua. Dobara try karein.")
+                            override fun onCreateSuccess(desc: SessionDescription?) = Unit
+                            override fun onCreateFailure(error: String?) = Unit
+                        },
+                        desc,
+                    )
+                    signal(s.peer, sdpJson("reoffer", s.callId, desc.description), critical = true)
+                }
+                override fun onCreateFailure(error: String?) =
+                    fail(error ?: "Call connect nahi hua. Dobara try karein.")
+                override fun onSetSuccess() = Unit
+                override fun onSetFailure(error: String?) = Unit
+            },
+            MediaConstraints(),
+        )
+    }
 
     private fun armRingTimeout(id: String) {
         cancelRingTimeout()

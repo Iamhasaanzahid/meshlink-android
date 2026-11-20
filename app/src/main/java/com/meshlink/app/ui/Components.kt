@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -121,18 +122,37 @@ fun MeshMark(size: Dp = 40.dp) {
             }
             drawPath(tail, Color.White)
 
-            // The "T" for Mhzaly, in the brand violet.
-            drawRoundRect(
+            // Bold "M" for Mhzaly, in the brand violet.
+            val mStroke = s * 0.075f
+            val mTop = s * 0.31f
+            val mBottom = s * 0.64f
+            drawLine(
                 color = Color(0xFF5B21B6),
-                topLeft = Offset(s * 0.27f, s * 0.30f),
-                size = Size(s * 0.46f, s * 0.10f),
-                cornerRadius = CornerRadius(s * 0.05f),
+                start = Offset(s * 0.27f, mBottom),
+                end = Offset(s * 0.27f, mTop),
+                strokeWidth = mStroke,
+                cap = StrokeCap.Round,
             )
-            drawRoundRect(
+            drawLine(
                 color = Color(0xFF5B21B6),
-                topLeft = Offset(s * 0.44f, s * 0.38f),
-                size = Size(s * 0.11f, s * 0.28f),
-                cornerRadius = CornerRadius(s * 0.055f),
+                start = Offset(s * 0.27f, mTop),
+                end = Offset(s * 0.50f, s * 0.56f),
+                strokeWidth = mStroke,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = Color(0xFF5B21B6),
+                start = Offset(s * 0.50f, s * 0.56f),
+                end = Offset(s * 0.73f, mTop),
+                strokeWidth = mStroke,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = Color(0xFF5B21B6),
+                start = Offset(s * 0.73f, mTop),
+                end = Offset(s * 0.73f, mBottom),
+                strokeWidth = mStroke,
+                cap = StrokeCap.Round,
             )
 
             // Small mint spark: a distinctive accent on the dark violet tile.
