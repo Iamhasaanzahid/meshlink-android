@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.28.0 — 2026-11-19 — private relay + premium drawer UI
+
+### Added
+- Paired sessions now use an authenticated Cloudflare bridge (register/publish/poll
+  with a per-pairing secret) instead of the public MQTT topic. Payloads stay
+  AES-GCM encrypted. Public MQTT remains only as a fallback for legacy sessions.
+- A side hamburger drawer now holds Chats, Calls, Status, Starred, Archived,
+  Nearby and Settings; the bottom bar stays clean like WhatsApp with only Chats
+  and Calls.
+- MeshLink AI opens as a right-side chat panel without replacing the conversation
+  list.
+
+### Changed
+- The Android app now uses the deep violet MeshLink web palette by default.
+- Status and AI are also available from the top-right of the chat list.
+- SMS now requests READ_PHONE_STATE on dual-SIM phones so the active SIM can be
+  selected, and inbound/outbound MeshLink SMS is logged for diagnostics.
+- The web app restarts its bridge as soon as a pairing secret arrives, so linking
+  a browser while the page is open switches to the private relay immediately.
+
+### Fixed
+- The web pairing flow now forwards the bridge secret from the pairing server to
+  the local vault; previously the browser kept using public MQTT after approval.
+- Failed/stuck outgoing messages are retried; already-sent messages are not
+  replayed through the bridge every few seconds.
+- The AI responder no longer waits for an unreachable local engine: it probes
+  briefly and answers instantly with the built-in MeshLink AI when offline.
+- The private relay now retries registration after a later pairing rotates the
+  server-side secret, so no app restart is needed.
+
 ## 1.27.2 — 2026-11-19 — encrypted web bridge
 
 ### Security

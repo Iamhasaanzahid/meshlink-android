@@ -107,6 +107,11 @@ object PermissionsHelper {
             "Receive SMS",
             "Reads MeshLink messages that arrive as SMS. Personal SMS are never opened or stored.",
         ),
+        Item(
+            Manifest.permission.READ_PHONE_STATE,
+            "Active SIM",
+            "Picks the right SIM for MeshLink SMS on dual-SIM phones. No call history or contacts are read.",
+        ),
     )
 
     fun corePermissions(): Array<String> = core().map { it.permission }.distinct().toTypedArray()

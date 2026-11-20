@@ -1,6 +1,7 @@
 package com.meshlink.app.data
 
 import android.content.Context
+import java.security.SecureRandom
 
 /**
  * User-tunable mesh settings, stored on the device only.
@@ -17,6 +18,7 @@ object MeshSettings {
     private const val KEY_ONLINE = "online_enabled"
     private const val KEY_ONLINE_MIGRATED = "online_global_v2"
     private const val KEY_BROKER = "online_broker"
+    private const val KEY_BRIDGE_SECRET = "bridge_secret"
 
     const val DEFAULT_HOPS = 8
     const val MIN_HOPS = 1
@@ -75,6 +77,23 @@ object MeshSettings {
 
     fun setOnlineBroker(context: Context, url: String) {
         prefs(context).edit().putString(KEY_BROKER, url.trim()).apply()
+    }
+
+    /**
+     * Long-lived secret generated on this phone. It authenticates the private
+     * Cloudflare bridge and is shared with the browser only when a pairing is
+     * approved. It never leaves the device except over HTTPS during pairing.
+     */
+    fun bridgeSecret(context: Context): String =
+        prefs(context).getString(KEY_BRIDGE_SECRET, "")?.trim().orEmpty()
+
+    fun ensureBridgeSecret(context: Context): String {
+        val existing = bridgeSecret(context)
+        if (existing.matches(Regex("^[0-9a-f]{64}$"))) return existing
+        val fresh = ByteArray(32).also { SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+        prefs(context).edit().putString(KEY_BRIDGE_SECRET, fresh).apply()
+        return fresh
     }
 
     private const val KEY_PINNED = "pinned_peers"

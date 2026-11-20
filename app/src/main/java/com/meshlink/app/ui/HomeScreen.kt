@@ -8,15 +8,19 @@ import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -40,11 +45,15 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
@@ -54,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +80,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -110,6 +121,8 @@ fun HomeScreen(
     val onlineCall by OnlineCallManager.state.collectAsState()
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var aiOpen by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var openPeer by rememberSaveable { mutableStateOf<String?>(null) }
     var openName by rememberSaveable { mutableStateOf("") }
     var newChatOpen by remember { mutableStateOf(false) }
@@ -433,6 +446,98 @@ fun HomeScreen(
             onVideoCall = { peer, name -> startVideoCall(peer, name) },
         )
     } else {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet(
+                    modifier = Modifier.width(300.dp),
+                    drawerContainerColor = WebDarkPanel,
+                    drawerContentColor = WebDarkText,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 14.dp, vertical = 24.dp),
+                    ) {
+                        Text(
+                            "MeshLink",
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                        )
+                        Text(
+                            "Premium hybrid messenger",
+                            color = BrandLight,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.2.sp,
+                            modifier = Modifier.padding(start = 13.dp, top = 2.dp, bottom = 18.dp),
+                        )
+                        val drawerItems = listOf(0, 1, 4, 5, 6, 2, 7)
+                        drawerItems.forEach { index ->
+                            val label = when (index) {
+                                0 -> "Chats"
+                                1 -> "Calls"
+                                2 -> "Nearby"
+                                4 -> "Status"
+                                5 -> "Starred"
+                                6 -> "Archived"
+                                else -> "Settings"
+                            }
+                            val icon = when (index) {
+                                0 -> Icons.Filled.Chat
+                                1 -> Icons.Filled.Call
+                                2 -> Icons.Filled.Wifi
+                                4 -> Icons.Filled.Info
+                                5 -> Icons.Filled.Star
+                                6 -> Icons.Filled.Archive
+                                else -> Icons.Filled.Settings
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        tab = index
+                                        scope.launch { drawerState.close() }
+                                    }
+                                    .background(
+                                        if (tab == index) BrandViolet.copy(alpha = 0.22f)
+                                        else Color.Transparent,
+                                        RoundedCornerShape(14.dp),
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(icon, contentDescription = null, tint = if (tab == index) BrandLight else WebDarkMuted)
+                                Spacer(Modifier.width(16.dp))
+                                Text(label, color = if (tab == index) Color.White else WebDarkText2, fontSize = 15.sp)
+                                if (index == 0 && chats.sumOf { it.unread } > 0) {
+                                    Spacer(Modifier.weight(1f))
+                                    Badge { Text(chats.sumOf { it.unread }.toString()) }
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = WebDarkSurface2, modifier = Modifier.padding(vertical = 12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    aiOpen = true
+                                    scope.launch { drawerState.close() }
+                                }
+                                .padding(horizontal = 14.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = BrandLight)
+                            Spacer(Modifier.width(16.dp))
+                            Text("MeshLink AI", color = WebDarkText, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+        ) {
         Scaffold(
             topBar = {
                 if (tab != 3) {
@@ -456,7 +561,10 @@ fun HomeScreen(
                             .statusBarsPadding()
                             .padding(start = 20.dp, end = 14.dp, top = 10.dp, bottom = 16.dp),
                     ) {
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Filled.Menu, contentDescription = "Open menu", tint = Color.White)
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "MeshLink",
@@ -491,7 +599,13 @@ fun HomeScreen(
                                     )
                                 }
                             }
-                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { tab = 4 }) {
+                                    Icon(Icons.Filled.Info, contentDescription = "Status", tint = Color.White)
+                                }
+                                IconButton(onClick = { aiOpen = true }) {
+                                    Icon(Icons.Filled.AutoAwesome, contentDescription = "MeshLink AI", tint = Color.White)
+                                }
                                 IconButton(onClick = { groupDialog = true }, enabled = tab == 0) {
                                     Icon(Icons.Filled.Add, contentDescription = "New group",
                                         tint = if (tab == 0) Color.White else Color.White.copy(alpha = 0.4f))
@@ -567,50 +681,37 @@ fun HomeScreen(
                 }
             },
             bottomBar = {
-                // Same eight sections as the web rail. Horizontally scrollable
-                // so every section stays reachable on a phone.
+                // WhatsApp-style calm bottom bar: everything else lives in the
+                // side drawer, so labels never get squashed or truncated.
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = WebDarkPanel,
                     tonalElevation = 0.dp,
                 ) {
-                    Row(Modifier.fillMaxWidth()) {
-                        val rail = listOf("Chats", "Calls", "Nearby", "AI", "Status", "Starred", "Archived", "Settings")
-                        rail.forEachIndexed { index, label ->
-                            NavigationBarItem(
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Color.White,
-                                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                                    indicatorColor = MaterialTheme.colorScheme.primary,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
-                                selected = tab == index,
-                                onClick = { tab = index },
-                                icon = {
-                                    val icon = when (index) {
-                                        0 -> Icons.Filled.Chat
-                                        1 -> Icons.Filled.Call
-                                        2 -> Icons.Filled.Wifi
-                                        3 -> Icons.Filled.AutoAwesome
-                                        4 -> Icons.Filled.Info
-                                        5 -> Icons.Filled.Star
-                                        6 -> Icons.Filled.Archive
-                                        else -> Icons.Filled.Settings
-                                    }
-                                    if (index == 0) {
-                                        BadgedBox(badge = {
-                                            val unread = chats.sumOf { it.unread }
-                                            if (unread > 0) {
-                                                Badge { Text(if (unread > 99) "99+" else unread.toString()) }
-                                            }
-                                        }) { Icon(icon, contentDescription = label) }
-                                    } else {
-                                        Icon(icon, contentDescription = label)
-                                    }
-                                },
-                                label = { Text(label) },
-                            )
-                        }
+                    listOf(0 to "Chats", 1 to "Calls").forEach { (index, label) ->
+                        NavigationBarItem(
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color.White,
+                                selectedTextColor = BrandLight,
+                                indicatorColor = BrandViolet,
+                                unselectedIconColor = WebDarkMuted,
+                                unselectedTextColor = WebDarkMuted,
+                            ),
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = {
+                                if (index == 0) {
+                                    BadgedBox(badge = {
+                                        val unread = chats.sumOf { it.unread }
+                                        if (unread > 0) {
+                                            Badge { Text(if (unread > 99) "99+" else unread.toString()) }
+                                        }
+                                    }) { Icon(Icons.Filled.Chat, contentDescription = label) }
+                                } else {
+                                    Icon(Icons.Filled.Call, contentDescription = label)
+                                }
+                            },
+                            label = { Text(label) },
+                        )
                     }
                 }
             },
@@ -765,6 +866,30 @@ fun HomeScreen(
                         onLogout = onLogout,
                     )
                 }
+            }
+        }
+        }
+    }
+
+    // MeshLink AI slides in from the right like a chat-side copilot, instead
+    // of replacing the conversation list.
+    if (aiOpen) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.58f))
+                    .clickable { aiOpen = false },
+            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(390.dp),
+                color = WebDarkPanel,
+                shadowElevation = 24.dp,
+            ) {
+                AiScreen(onBack = { aiOpen = false })
             }
         }
     }

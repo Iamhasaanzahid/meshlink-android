@@ -1,6 +1,5 @@
 package com.meshlink.app.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -118,7 +117,8 @@ private val MeshTypography = Typography().let { base ->
 
 @Composable
 fun MeshLinkTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // MeshLink's premium identity is the deep violet web theme on mobile too.
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(

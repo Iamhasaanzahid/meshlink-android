@@ -6,6 +6,8 @@
     <!-- Cellular radio (SMS) — works with only a SIM, no internet -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Needed to pick the active SIM for SMS on dual-SIM phones. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <!-- Calling: SIM dial + Wi-Fi Direct voice -->
     <uses-permission android:name="android.permission.CALL_PHONE" />

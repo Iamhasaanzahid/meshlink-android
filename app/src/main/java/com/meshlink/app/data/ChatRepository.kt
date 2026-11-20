@@ -470,9 +470,9 @@ object ChatRepository {
                 "SELECT id, chat_id, body, ts, kind, media_path, media_mime, media_name, media_size " +
                     "FROM messages " +
                     "WHERE from_me = 1 AND ts >= ? AND " +
-                    "(status = ? OR (status = ? AND kind = 'TEXT')) " +
+                    "status IN (?, ?) " +
                     "ORDER BY ts LIMIT 30",
-                arrayOf(since.toString(), MsgStatus.FAILED.name, MsgStatus.SENT.name),
+                arrayOf(since.toString(), MsgStatus.FAILED.name, MsgStatus.SENDING.name),
             ).use { c ->
                 while (c.moveToNext()) {
                     pending += Message(

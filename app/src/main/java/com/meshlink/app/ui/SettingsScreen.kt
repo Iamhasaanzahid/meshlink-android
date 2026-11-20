@@ -91,7 +91,12 @@ fun SettingsScreen(
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            val outcome = QrLink.approve(request, myUin, displayName)
+            val outcome = QrLink.approve(
+                request,
+                myUin,
+                displayName,
+                MeshSettings.ensureBridgeSecret(context),
+            )
             val message = outcome.getOrNull()?.let { "Web linked · return to your browser" }
                 ?: "Link failed: ${outcome.exceptionOrNull()?.message ?: "unknown error"}"
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -682,7 +687,13 @@ fun SettingsScreen(
                 when (manualState) {
                     "claimed" -> TextButton(onClick = {
                         scope.launch {
-                            QrLink.approveManual(manualSession, manualToken, myUin, displayName)
+                            QrLink.approveManual(
+                                manualSession,
+                                manualToken,
+                                myUin,
+                                displayName,
+                                MeshSettings.ensureBridgeSecret(context),
+                            )
                                 .onSuccess { manualState = "approved" }
                                 .onFailure {
                                     manualState = "expired"

@@ -78,6 +78,7 @@ object QrLink {
         token: String,
         meshId: String,
         displayName: String,
+        bridgeSecret: String,
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val body = JSONObject()
@@ -85,6 +86,7 @@ object QrLink {
                 .put("token", token)
                 .put("meshId", meshId)
                 .put("name", displayName)
+                .put("bridgeSecret", bridgeSecret)
                 .toString()
             postJson("$API_BASE/api/pair/approve", body)
         }
@@ -105,16 +107,21 @@ object QrLink {
         return text
     }
 
-    suspend fun approve(request: Request, meshId: String, displayName: String): Result<String> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val url = request.approveUrl
-                val body = JSONObject()
-                    .put("session", request.session)
-                    .put("token", request.token)
-                    .put("meshId", meshId)
-                    .put("name", displayName)
-                    .toString()
+    suspend fun approve(
+        request: Request,
+        meshId: String,
+        displayName: String,
+        bridgeSecret: String,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = request.approveUrl
+            val body = JSONObject()
+                .put("session", request.session)
+                .put("token", request.token)
+                .put("meshId", meshId)
+                .put("name", displayName)
+                .put("bridgeSecret", bridgeSecret)
+                .toString()
                 val conn = URL(url).openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.connectTimeout = 8_000

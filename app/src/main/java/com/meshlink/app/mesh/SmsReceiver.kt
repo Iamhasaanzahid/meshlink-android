@@ -33,7 +33,8 @@ class SmsReceiver : BroadcastReceiver() {
             body.append(m.messageBody ?: "")
         }
         if (from.isNotEmpty()) {
-            RadioTransport.onSmsReceived(from, body.toString())
+            val meshSms = RadioTransport.onSmsReceived(from, body.toString())
+            Log.i(TAG, "SMS from $from: ${if (meshSms) "MeshLink frame" else "ignored"}")
         }
     }
 

@@ -486,8 +486,8 @@ private suspend fun probeEngine(base: String): Boolean = withContext(Dispatchers
     try {
         connection = URL(base.trimEnd('/') + "/api/tags").openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
-        connection.connectTimeout = 5_000
-        connection.readTimeout = 5_000
+        connection.connectTimeout = 2_000
+        connection.readTimeout = 2_000
         connection.responseCode in 200..299
     } catch (e: Exception) {
         false
@@ -503,6 +503,9 @@ private suspend fun chatWithEngine(
     history: List<AiMessage>,
     prompt: String,
 ): EngineReply = withContext(Dispatchers.IO) {
+    // Never make the user wait two minutes for a local engine that is not
+    // running. The built-in MeshLink AI answers instantly in that case.
+    if (!probeEngine(base)) return@withContext EngineReply(localReply(prompt), false)
     var connection: HttpURLConnection? = null
     try {
         val messages = JSONArray()
@@ -521,8 +524,8 @@ private suspend fun chatWithEngine(
 
         connection = URL(base.trimEnd('/') + "/api/chat").openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 120_000
-        connection.readTimeout = 120_000
+        connection.connectTimeout = 8_000
+        connection.readTimeout = 30_000
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         connection.setRequestProperty("Accept", "application/json")
         connection.doOutput = true

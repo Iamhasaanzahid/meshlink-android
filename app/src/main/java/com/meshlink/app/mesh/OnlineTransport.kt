@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Base64
 import android.util.Log
+import com.meshlink.app.data.MeshSettings
 import com.meshlink.app.util.isMeshLinkId
 import org.json.JSONObject
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
@@ -13,6 +14,9 @@ import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import java.io.OutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 import kotlin.concurrent.thread
 import java.security.SecureRandom
@@ -40,6 +44,8 @@ class OnlineTransport(private val context: Context) {
         private const val TOPIC_ROOT = "meshlink/v1"
         /** Shared topic with the web app (plain UTF-8 JSON, no app crypto). */
         private const val WEB_TOPIC_ROOT = "meshlink/web"
+        /** Authenticated Cloudflare relay used before the public MQTT fallback. */
+        private const val RELAY_BASE = "https://meshlink-app.pages.dev/api/bridge"
         const val DEFAULT_BROKER = "ssl://broker.hivemq.com:8883"
         // Some mobile carriers block outbound 8883/MQTT. Paho supports these
         // URI schemes natively, so we rotate instead of getting stuck forever.
@@ -88,9 +94,15 @@ class OnlineTransport(private val context: Context) {
         for (u in watched) runCatching { c.subscribe("$TOPIC_ROOT/$u/#", 0) }
     }
 
+    /** The private HTTPS relay is live. */
     @Volatile
-    var isConnected: Boolean = false
-        private set
+    private var relayReady: Boolean = false
+
+    /** Public MQTT is live. Either transport makes online mode usable. */
+    @Volatile
+    private var mqttConnected: Boolean = false
+
+    val isConnected: Boolean get() = relayReady || mqttConnected
 
     @Volatile
     private var uin: String = ""
@@ -112,6 +124,9 @@ class OnlineTransport(private val context: Context) {
 
     private var client: MqttClient? = null
     private var retryThread: Thread? = null
+    private var relayThread: Thread? = null
+    @Volatile
+    private var relaySeq: Long = 0
 
     private val random = SecureRandom()
 
@@ -126,6 +141,12 @@ class OnlineTransport(private val context: Context) {
         currentBroker = initialBroker(url)
         lastError = ""
         stopped = false
+        val secret = MeshSettings.ensureBridgeSecret(context)
+        if (secret.matches(Regex("^[0-9a-f]{64}$"))) {
+            relayThread = thread(name = "meshlink-relay", isDaemon = true) {
+                relayLoop(secret)
+            }
+        }
         retryThread = thread(name = "meshlink-online", isDaemon = true) {
             connectLoop()
         }
@@ -133,7 +154,9 @@ class OnlineTransport(private val context: Context) {
 
     fun stop() {
         stopped = true
-        isConnected = false
+        relayReady = false
+        mqttConnected = false
+        relayThread?.interrupt()
         val c = client
         client = null
         runCatching { c?.disconnectForcibly(0, 0, false) }
@@ -148,10 +171,20 @@ class OnlineTransport(private val context: Context) {
         val dest = destination.trim().uppercase()
         val me = uin
         if (me.isBlank() || dest.isBlank()) return false
-        if (!dest.isMeshLinkId()) return false
-        val c = client ?: return false
-        if (!isConnected) return false
+        if (!dest.isMeshLinkId() || !isConnected) return false
         val blob = runCatching { encrypt(pairKey(me, dest), frame) }.getOrNull() ?: return false
+        if (relayReady) {
+            val envelope = JSONObject()
+                .put("t", "mesh")
+                .put("f", me)
+                .put("v", Base64.encodeToString(blob, Base64.NO_WRAP))
+                .toString()
+            if (postRelay("publish", JSONObject().put("to", dest).put("payload", envelope))) {
+                return true
+            }
+        }
+        val c = client ?: return false
+        if (!mqttConnected) return false
         return runCatching {
             c.publish(
                 "$TOPIC_ROOT/$dest/$me",
@@ -177,7 +210,7 @@ class OnlineTransport(private val context: Context) {
         val dest = destination.trim().uppercase()
         val peer = keyPeer.trim().uppercase()
         if (!dest.isMeshLinkId() || !peer.isMeshLinkId() || !isConnected) {
-            Log.w(TAG, "web bridge skipped: online=${isConnected} dest=$dest")
+            Log.w(TAG, "web bridge skipped: online=$isConnected dest=$dest")
             return false
         }
         return runCatching {
@@ -190,6 +223,13 @@ class OnlineTransport(private val context: Context) {
                 .put("u", uin)
                 .put("e", Base64.encodeToString(encrypted, Base64.NO_WRAP))
                 .toString()
+            if (relayReady) {
+                val envelope = JSONObject().put("t", "web").put("v", wire).toString()
+                if (postRelay("publish", JSONObject().put("to", dest).put("payload", envelope))) {
+                    Log.i(TAG, "web bridge published through private relay to $dest")
+                    return true
+                }
+            }
             client?.publish(
                 "$WEB_TOPIC_ROOT/$dest",
                 MqttMessage(wire.toByteArray(Charsets.UTF_8)).apply { qos = 0; isRetained = false },
@@ -199,6 +239,100 @@ class OnlineTransport(private val context: Context) {
         }.getOrElse {
             Log.w(TAG, "web bridge publish failed: ${it.message}")
             false
+        }
+    }
+
+    // --------------------------------------------------- authenticated relay
+
+    /** Registers this phone's secret once, then long-polls its own inbox. */
+    private fun relayLoop(secret: String) {
+        try {
+            postRelayText("register", JSONObject(), 10_000, secret)
+            Log.i(TAG, "private bridge registered for $uin")
+        } catch (t: Throwable) {
+            Log.w(TAG, "private bridge registration failed: ${t.message}")
+            lastError = "relay register: ${t.message ?: "unknown"}"
+            return
+        }
+        while (!stopped) {
+            try {
+                // A later pairing can rotate the server-side secret. Retrying
+                // registration here lets the relay recover without a restart.
+                if (!relayReady) postRelayText("register", JSONObject(), 10_000, secret)
+                val text = postRelayText("poll", JSONObject().put("since", relaySeq), 25_000, secret)
+                val answer = JSONObject(text)
+                relaySeq = maxOf(relaySeq, answer.optLong("seq", relaySeq))
+                val messages = answer.optJSONArray("messages")
+                if (messages != null) {
+                    for (i in 0 until messages.length()) {
+                        val message = messages.optJSONObject(i) ?: continue
+                        relaySeq = maxOf(relaySeq, message.optLong("seq", relaySeq))
+                        dispatchRelay(message.optString("data"))
+                    }
+                }
+                if (!relayReady) Log.i(TAG, "private bridge ready")
+                relayReady = true
+                lastError = ""
+            } catch (t: InterruptedException) {
+                break
+            } catch (t: Throwable) {
+                relayReady = false
+                lastError = "relay: ${t.message ?: "unknown"}"
+                Log.w(TAG, "private bridge poll failed: $lastError")
+                if (!stopped) runCatching { Thread.sleep(2_500) }
+            }
+        }
+        relayReady = false
+    }
+
+    private fun postRelay(path: String, body: JSONObject): Boolean = runCatching {
+        postRelayText(path, body, 10_000)
+        true
+    }.getOrElse {
+        Log.w(TAG, "relay $path failed: ${it.message}")
+        false
+    }
+
+    private fun postRelayText(
+        path: String,
+        body: JSONObject,
+        readTimeout: Int,
+        secret: String = MeshSettings.bridgeSecret(context),
+    ): String {
+        val json = body
+            .put("meshId", uin)
+            .put("secret", secret)
+            .toString()
+        val conn = URL("$RELAY_BASE/$path").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 8_000
+        conn.readTimeout = readTimeout
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.doOutput = true
+        conn.outputStream.use { out: OutputStream -> out.write(json.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        conn.disconnect()
+        if (code !in 200..299) throw IllegalStateException("HTTP $code: ${text.take(160)}")
+        return text
+    }
+
+    /** Relay payloads are envelope-wrapped so web and mesh frames can coexist. */
+    private fun dispatchRelay(raw: String) {
+        if (raw.isBlank()) return
+        val envelope = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        when (envelope.optString("t")) {
+            "web" -> handleWebWire(envelope.optString("v"))
+            "mesh" -> {
+                val from = envelope.optString("f").replace(Regex("\\D"), "").take(10)
+                if (!from.isMeshLinkId() || from == uin) return
+                val blob = runCatching {
+                    Base64.decode(envelope.optString("v"), Base64.NO_WRAP)
+                }.getOrNull() ?: return
+                val plain = decrypt(pairKey(uin, from), blob) ?: return
+                onFrame?.invoke(from, plain)
+            }
         }
     }
 
@@ -244,7 +378,7 @@ class OnlineTransport(private val context: Context) {
                 c.setCallback(object : MqttCallbackExtended {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                         if (stopped) return
-                        isConnected = true
+                        mqttConnected = true
                         lastError = ""
                         // cleanSession=true drops subscriptions on reconnect.
                         c?.let { resubscribe(it) }
@@ -252,7 +386,7 @@ class OnlineTransport(private val context: Context) {
                     }
 
                     override fun connectionLost(cause: Throwable?) {
-                        isConnected = false
+                        mqttConnected = false
                         Log.w(TAG, "connection lost: ${cause?.message}")
                     }
 
@@ -271,18 +405,18 @@ class OnlineTransport(private val context: Context) {
                 c.connect(options)
                 if (stopped) break
                 client = c
-                isConnected = true
+                mqttConnected = true
                 failedAttempts = 0
                 resubscribe(c)
                 Log.i(TAG, "online mode ready on $currentBroker as $me")
                 // Stay here until the socket drops or the user switches off.
                 while (!stopped && c.isConnected) Thread.sleep(500)
             } catch (t: Throwable) {
-                isConnected = false
+                mqttConnected = false
                 lastError = "${t.javaClass.simpleName}: ${t.message ?: "unknown"}"
                 Log.w(TAG, "connect failed on $currentBroker: $lastError")
             } finally {
-                isConnected = false
+                mqttConnected = false
                 if (client === c) client = null
                 runCatching { c?.disconnectForcibly(0, 0, false) }
                 runCatching { c?.close() }
@@ -320,9 +454,14 @@ class OnlineTransport(private val context: Context) {
         onFrame?.invoke(sender, plain)
     }
 
-    /** Converts a web-app JSON message into a normal MeshLink text frame. */
+    /** MQTT callback: hand the UTF-8 payload to the shared wire handler. */
     private fun handleWebMessage(topic: String, message: MqttMessage?) {
         val raw = runCatching { String(message?.payload ?: return, Charsets.UTF_8) }.getOrNull() ?: return
+        handleWebWire(raw)
+    }
+
+    /** Converts a web-app JSON message into a normal MeshLink text frame. */
+    private fun handleWebWire(raw: String) {
         val wire = runCatching { JSONObject(raw) }.getOrNull() ?: return
         val from = wire.optString("u").replace(Regex("\\D"), "").take(10)
         if (!from.isMeshLinkId()) return
