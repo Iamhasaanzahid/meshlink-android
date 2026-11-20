@@ -1124,6 +1124,8 @@ private fun HomeChromeHeader(
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
+                MeshMark(size = 26.dp)
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         title,
@@ -1228,6 +1230,17 @@ private fun HomeChromeHeader(
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(tokens.violet, tokens.lilac, BrandMint),
+                        ),
+                    ),
+            )
         }
     }
 }

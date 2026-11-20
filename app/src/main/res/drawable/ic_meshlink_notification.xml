@@ -4,8 +4,8 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Mhzaly notification glyph: compact bold M. -->
+    <!-- Mhzaly notification glyph: bold compact M. -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M5,19V5h2.7L12,10.9 16.3,5H19v14h-2.7v-8.2L12,15.9 7.7,10.8V19z" />
+        android:pathData="M4,20V4h3L12,11l5,-7h3v16h-3v-9l-5,7 -5,-7v9z" />
 </vector>

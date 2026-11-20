@@ -57,6 +57,7 @@ import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import java.util.UUID
+import kotlin.math.abs
 
 /**
  * ONLINE CALLS — peer-to-peer voice over the internet, like WhatsApp calls.
@@ -143,6 +144,8 @@ object OnlineCallManager {
     private var timerJob: Job? = null
     private var exportRunnable: Runnable? = null
     private var ringTimeout: Runnable? = null
+    /** Call IDs already seen, so replayed rings cannot ring the phone again. */
+    private val seenCalls = mutableMapOf<String, Long>()
     private var pendingOffer: String? = null
     /** User accepted before the SDP offer arrived; finish as soon as it does. */
     private var pendingAccept = false
@@ -320,6 +323,7 @@ object OnlineCallManager {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             iceTransportsType = PeerConnection.IceTransportsType.ALL
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            iceCandidatePoolSize = 2
         }
         val pc = f.createPeerConnection(config, observer)
             ?: throw IllegalStateException("WebRTC could not start")
@@ -551,10 +555,8 @@ object OnlineCallManager {
         )
         enterAudioMode()
         armRingTimeout(id)
-        // Ring the other phone immediately. The SDP offer follows as soon as
-        // WebRTC is ready, so the callee sees the call instead of waiting in
-        // silence while ICE/TURN gathers.
-        signal(target, ringJson(id, _state.value.remoteName, video), critical = true)
+        // Only the real SDP offer may ring the other phone. A separate early
+        // "ring" signal could be replayed later and caused phantom calls.
         try {
             val pc = newPeerConnection(video)
             pc.createOffer(object : SdpObserver {
@@ -684,31 +686,10 @@ object OnlineCallManager {
             val current = _state.value
             when (action) {
                 "ring" -> {
-                    // Instant ring tone/UI, before the SDP offer arrives.
-                    val busy = current.phase != Phase.IDLE &&
-                        current.phase != Phase.ENDED &&
-                        current.phase != Phase.FAILED
-                    if (busy) {
-                        signal(from, simpleJson("reject", id))
-                        return@post
-                    }
-                    stopRinging()
-                    pendingOffer = null
-                    pendingAccept = false
-                    val name = json.optString("n").ifBlank { from }
-                    _state.value = Ui(
-                        phase = Phase.RINGING,
-                        role = Role.CALLEE,
-                        remoteName = name,
-                        relayed = true,
-                        peer = from,
-                        callId = id,
-                        video = json.optBoolean("video", false),
-                        message = "Call connect ho raha hai…",
-                    )
-                    startRinging()
-                    showIncomingNotification(name, from, json.optBoolean("video", false))
-                    armRingTimeout(id)
+                    // Legacy early-ring signals are ignored. Only a real SDP
+                    // offer can start an incoming call, so replayed or fake
+                    // rings can never reach the UI.
+                    return@post
                 }
 
                 "reoffer" -> {
@@ -780,8 +761,8 @@ object OnlineCallManager {
                 }
 
                 "offer" -> {
-                    // A "ring" may already have opened this call. Only reject
-                    // genuinely different calls.
+                    // The offer itself is the only ring. Reject genuinely
+                    // different calls only.
                     val samePending = current.relayed && current.callId == id &&
                         (current.phase == Phase.RINGING || current.phase == Phase.CONNECTING)
                     val busy = current.phase != Phase.IDLE &&
@@ -793,7 +774,12 @@ object OnlineCallManager {
                         return@post
                     }
                     val sdp = json.optString("sdp")
-                    if (sdp.isBlank()) return@post
+                    if (!isFresh(json) || sdp.isBlank()) return@post
+                    if (seenCalls.containsKey(id)) return@post
+                    seenCalls[id] = System.currentTimeMillis()
+                    if (seenCalls.size > 32) {
+                        seenCalls.entries.removeAll { System.currentTimeMillis() - it.value > 60_000L }
+                    }
                     pendingOffer = sdp
                     if (!samePending) {
                         stopRinging()
@@ -993,6 +979,7 @@ object OnlineCallManager {
                 .put("sdp", desc.description)
                 .put("n", appContext?.let { SessionStore.displayName(it) } ?: "")
                 .put("video", videoActive)
+                .put("ts", System.currentTimeMillis())
                 .toString()
         }.getOrDefault("")
 
@@ -1018,15 +1005,11 @@ object OnlineCallManager {
                 .toString()
         }.getOrDefault("")
 
-    private fun ringJson(id: String, name: String, video: Boolean): String =
-        runCatching {
-            JSONObject()
-                .put("a", "ring")
-                .put("id", id)
-                .put("n", name)
-                .put("video", video)
-                .toString()
-        }.getOrDefault("")
+    /** Old queued/replayed signals must never ring a phone. */
+    private fun isFresh(json: JSONObject): Boolean {
+        val ts = json.optLong("ts", 0L)
+        return ts > 0L && abs(System.currentTimeMillis() - ts) < 30_000L
+    }
 
     /**
      * A mobile/CGNAT network can block the first ICE path. Restart ICE and
@@ -1096,6 +1079,7 @@ object OnlineCallManager {
         ringTimeout?.let { handler.removeCallbacks(it) }
         ringTimeout = null
     }
+
 
     // ---------------------------------------------------------- code export
 

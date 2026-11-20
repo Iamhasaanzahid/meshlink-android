@@ -4,11 +4,11 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Mhzaly brand mark: bold white M with a mint message dot. -->
+    <!-- Mhzaly mark: large white M with a mint message dot. -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M28,76V30h9l13,22 13-22h9v46h-9V47L50,68 37,47v29z" />
+        android:pathData="M23,76V23h11l16,26 16,-26h11v53H66V46L50,69 34,46v30z" />
     <path
         android:fillColor="#34D399"
-        android:pathData="M76,24a6,6 0 1,0 0,12a6,6 0 1,0 0,-12" />
+        android:pathData="M84,24a8,8 0 1,0 0,16a8,8 0 1,0 0,-16" />
 </vector>

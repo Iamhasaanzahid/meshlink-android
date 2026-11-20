@@ -95,7 +95,7 @@ fun MeshMark(size: Dp = 40.dp) {
             .clip(RoundedCornerShape(radius))
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFF8B5CF6), BrandViolet, BrandDeep),
+                    listOf(Color(0xFF6D28D9), Color(0xFF4C1D95), Color(0xFF2E1065)),
                 ),
             )
             .border(
@@ -106,19 +106,19 @@ fun MeshMark(size: Dp = 40.dp) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val s = size.toPx()
             val m = Path().apply {
-                moveTo(s * 0.259f, s * 0.704f)
-                lineTo(s * 0.259f, s * 0.278f)
-                lineTo(s * 0.333f, s * 0.278f)
-                lineTo(s * 0.500f, s * 0.556f)
-                lineTo(s * 0.667f, s * 0.278f)
-                lineTo(s * 0.741f, s * 0.278f)
-                lineTo(s * 0.741f, s * 0.704f)
-                lineTo(s * 0.667f, s * 0.704f)
-                lineTo(s * 0.667f, s * 0.444f)
-                lineTo(s * 0.530f, s * 0.667f)
-                lineTo(s * 0.470f, s * 0.667f)
-                lineTo(s * 0.333f, s * 0.444f)
-                lineTo(s * 0.333f, s * 0.704f)
+                moveTo(s * 0.213f, s * 0.704f)
+                lineTo(s * 0.213f, s * 0.213f)
+                lineTo(s * 0.315f, s * 0.213f)
+                lineTo(s * 0.500f, s * 0.454f)
+                lineTo(s * 0.685f, s * 0.213f)
+                lineTo(s * 0.787f, s * 0.213f)
+                lineTo(s * 0.787f, s * 0.704f)
+                lineTo(s * 0.685f, s * 0.704f)
+                lineTo(s * 0.685f, s * 0.426f)
+                lineTo(s * 0.530f, s * 0.639f)
+                lineTo(s * 0.470f, s * 0.639f)
+                lineTo(s * 0.315f, s * 0.426f)
+                lineTo(s * 0.315f, s * 0.704f)
                 close()
             }
             drawPath(m, Color.White)
