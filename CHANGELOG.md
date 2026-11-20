@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.27.1 — 2026-11-19 — linked-device sync
+
+### Added
+- Messages sent from the paired web app now appear on the phone as outgoing
+  messages, and phone messages appear in the browser, so the two devices share
+  one conversation instead of acting like separate accounts.
+- Web sends a copy of each message to the phone's own bridge topic; the phone
+  sends the same companion copy to the browser.
+
+### Fixed
+- Long text messages now reach the web bridge even when the radio payload is
+  split into several frames.
+
 ## 1.27.0 — 2026-11-19 — worldwide web bridge + premium UI
 
 ### Added

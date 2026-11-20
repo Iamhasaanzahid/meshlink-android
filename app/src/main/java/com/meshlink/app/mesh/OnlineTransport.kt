@@ -52,6 +52,10 @@ class OnlineTransport(private val context: Context) {
     /** A decrypted frame arrived from [fromUin]. */
     var onFrame: ((fromUin: String, bytes: ByteArray) -> Unit)? = null
 
+    /** A message sent from a linked web session arrived; mirror it as outgoing. */
+    var onCompanionForMe:
+        ((peer: String, messageId: String, body: String, senderName: String) -> Unit)? = null
+
     /**
      * A frame for a phone near us arrived from a far sender. We have
      * internet, that phone does not, so hand it over on the local radios.
@@ -305,7 +309,24 @@ class OnlineTransport(private val context: Context) {
         val raw = runCatching { String(message?.payload ?: return, Charsets.UTF_8) }.getOrNull() ?: return
         val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
         val from = data.optString("u").replace(Regex("\\D"), "").take(10)
-        if (from == uin || !from.isMeshLinkId()) return
+        if (!from.isMeshLinkId()) return
+        val selfSync = data.optBoolean("s", false) || data.optString("s") == "1"
+        if (selfSync) {
+            // A message typed in the paired web app. Show it in the phone's
+            // chat list as an outgoing message; do not deliver it again.
+            val peer = data.optString("d").replace(Regex("\\D"), "").take(10)
+            val body = data.optString("b")
+            if (data.optString("o") == "web" && peer.isMeshLinkId() && body.isNotBlank()) {
+                onCompanionForMe?.invoke(
+                    peer,
+                    data.optString("i").take(80),
+                    body,
+                    data.optString("n").take(48),
+                )
+            }
+            return
+        }
+        if (from == uin) return
         val body = data.optString("b")
         if (body.isBlank()) return
         val payload = JSONObject()

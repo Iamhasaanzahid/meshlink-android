@@ -84,6 +84,10 @@ class MeshEngine(private val context: Context) {
         ((from: String, messageId: String, body: String, senderName: String,
           transport: TransportType, senderPhone: String) -> Unit)? = null
 
+    /** A message was sent from the paired web app; mirror it as outgoing. */
+    var onCompanionForMe:
+        ((peer: String, messageId: String, body: String, senderName: String) -> Unit)? = null
+
     /** The receiving phone confirmed delivery of [messageId]. */
     var onAckFor: ((messageId: String) -> Unit)? = null
 
@@ -289,6 +293,9 @@ class MeshEngine(private val context: Context) {
             it.onRelayFor = { receiver, sender, bytes ->
                 relayToMesh(receiver, sender, bytes)
             }
+            it.onCompanionForMe = { peer, id, body, name ->
+                onCompanionForMe?.invoke(peer, id, body, name)
+            }
             online = it
         }
         t.start(me, MeshSettings.onlineBroker(context))
@@ -327,9 +334,14 @@ class MeshEngine(private val context: Context) {
         return true
     }
 
+    private fun isControlBody(body: String): Boolean =
+        body.startsWith("MLRD|") || body.startsWith("MLDEL|") ||
+            body.startsWith("MLR1|") || body.startsWith("MLGINV|") ||
+            body.startsWith("MLG1|")
+
     /** Mirrors a text message to the web app over the shared MQTT bridge. */
     private fun publishWebText(destination: String, messageId: String, body: String, senderName: String) {
-        if (!destination.isMeshLinkId()) return
+        if (!destination.isMeshLinkId() || isControlBody(body)) return
         val t = online ?: return
         if (!t.isConnected) return
         val payload = JSONObject()
@@ -339,6 +351,23 @@ class MeshEngine(private val context: Context) {
             .put("u", localUin)
             .toString()
         onlineSender.execute { runCatching { t.publishWebBridge(destination, payload) } }
+    }
+
+    /** Mirrors a phone-sent message to the user's own web sessions. */
+    private fun publishWebCompanion(peer: String, messageId: String, body: String, senderName: String) {
+        if (!peer.isMeshLinkId() || isControlBody(body)) return
+        val t = online ?: return
+        if (!t.isConnected || localUin.isBlank()) return
+        val payload = JSONObject()
+            .put("i", messageId)
+            .put("b", body)
+            .put("n", senderName)
+            .put("u", localUin)
+            .put("d", peer)
+            .put("s", 1)
+            .put("o", "android")
+            .toString()
+        onlineSender.execute { runCatching { t.publishWebBridge(localUin, payload) } }
     }
 
     /** Publishes one already-built online envelope (file / call signalling). */
@@ -408,6 +437,7 @@ class MeshEngine(private val context: Context) {
         }
         // The web bridge carries plain JSON, independent of radio frame size.
         publishWebText(target, messageId, body, senderName)
+        publishWebCompanion(target, messageId, body, senderName)
         return sendFrames(target, frames, allowSms, smsNumber)
     }
 

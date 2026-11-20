@@ -213,6 +213,34 @@ object ChatRepository {
     }
 
     /**
+     * A message was sent from the paired web session. It already went out
+     * through the bridge, so add it to this phone's history as outgoing
+     * instead of delivering it a second time.
+     */
+    fun onCompanionSent(peer: String, messageId: String, body: String, senderName: String = "") {
+        val target = peer.trim()
+        val text = body.trim()
+        if (target.isEmpty() || text.isEmpty()) return
+        val id = messageId.ifBlank { UUID.randomUUID().toString() }
+        if (exists(id)) return
+        val msg = Message(
+            id = id,
+            chatId = target,
+            fromMe = true,
+            body = text,
+            timestamp = System.currentTimeMillis(),
+            transport = "ONLINE",
+            status = MsgStatus.SENT,
+        )
+        scope.launch {
+            insertMessage(msg)
+            touchChat(target, resolveName(target, senderName), text, msg.timestamp, "ONLINE", 0)
+            refreshMessages(target)
+            refreshChats()
+        }
+    }
+
+    /**
      * Queue a photo, document or voice note.
      *
      * [file] must already live in app storage (the picker copies it there), so
