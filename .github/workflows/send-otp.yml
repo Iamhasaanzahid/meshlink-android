@@ -1,4 +1,4 @@
-name: Send MeshLink OTP
+name: Send Mhzaly OTP
 
 on:
   workflow_dispatch:
@@ -49,9 +49,9 @@ jobs:
           msg = EmailMessage()
           msg["From"] = os.environ["SMTP_USER"]
           msg["To"] = email
-          msg["Subject"] = "MeshLink verification code"
+          msg["Subject"] = "Mhzaly verification code"
           msg.set_content(
-              f"Your MeshLink verification code is {code}. "
+              f"Your Mhzaly verification code is {code}. "
               "It expires in 5 minutes.\n\n"
               "If you did not request this, you can ignore this email."
           )
