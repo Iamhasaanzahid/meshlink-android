@@ -21,6 +21,7 @@ import android.os.VibratorManager
 import android.util.Log
 import com.meshlink.app.data.ChatRepository
 import com.meshlink.app.data.SessionStore
+import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -108,6 +109,8 @@ object CallManager {
     @Volatile private var muted = false
     @Volatile private var ended = false
     @Volatile private var active = false
+    /** Invite IDs already handled, so replayed frames cannot ring again. */
+    private val seenInvites = mutableMapOf<String, Long>()
 
     var onIncomingCall: ((CallUiState) -> Unit)? = null
     var onCallEnded: (() -> Unit)? = null
@@ -277,10 +280,28 @@ object CallManager {
 
     // ------------------------------------------------------------- signalling
 
-    private fun onControl(from: String, action: String, callId: String, name: String, peerIp: String) {
+    private fun onControl(
+        from: String,
+        action: String,
+        callId: String,
+        name: String,
+        peerIp: String,
+        stamp: String,
+    ) {
         val s = _state.value
         when (action) {
             "invite" -> {
+                // Replayed/stale local invites were causing calls with nobody
+                // on the other end. Only fresh, unseen invites may ring.
+                val age = runCatching {
+                    abs(System.currentTimeMillis() / 1000L - java.lang.Long.parseLong(stamp, 36))
+                }.getOrDefault(Long.MAX_VALUE)
+                if (age > 60L) return
+                if (seenInvites.containsKey(callId)) return
+                seenInvites[callId] = System.currentTimeMillis()
+                if (seenInvites.size > 32) {
+                    seenInvites.entries.removeAll { System.currentTimeMillis() - it.value > 120_000L }
+                }
                 // ENDED is a short-lived banner, not a busy call.
                 if (s.phase != CallPhase.IDLE && s.phase != CallPhase.ENDED) {
                     engine?.sendControl(from, "reject", callId, nameForUs())

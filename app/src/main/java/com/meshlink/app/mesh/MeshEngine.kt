@@ -101,7 +101,7 @@ class MeshEngine(private val context: Context) {
 
     /** Call signalling: action = invite / accept / reject / end. */
     var onControl:
-        ((from: String, action: String, callId: String, name: String, peerIp: String) -> Unit)? = null
+        ((from: String, action: String, callId: String, name: String, peerIp: String, stamp: String) -> Unit)? = null
 
     /** WebRTC signalling for internet calls, carried inside online mode. */
     var onCallSignal: ((from: String, json: String) -> Unit)? = null
@@ -642,12 +642,15 @@ class MeshEngine(private val context: Context) {
         // running. A stale Wi-Fi IP would make the callee send audio to a dead
         // address even though the call is travelling over Wi-Fi Direct.
         val ip = if (lanActive) localLanIp().orEmpty() else ""
+        // Short base36 timestamp keeps replayed invites from ringing a phone.
+        val stamp = (System.currentTimeMillis() / 1000L).toString(36).takeLast(5)
         var payload = JSONObject()
             .put("a", action)
             .put("id", callId.take(8))
             .put("n", name.take(12))
             .put("u", localUin)
             .put("ip", ip)
+            .put("t", stamp)
             .toString()
             .toByteArray(Charsets.UTF_8)
         if (payload.size > MeshFrame.MAX_PAYLOAD) {
@@ -657,6 +660,7 @@ class MeshEngine(private val context: Context) {
                 .put("id", callId.take(8))
                 .put("u", localUin)
                 .put("ip", ip)
+                .put("t", stamp)
                 .toString()
                 .toByteArray(Charsets.UTF_8)
         }
@@ -1202,8 +1206,9 @@ class MeshEngine(private val context: Context) {
             val sender = json.optString("u", "").takeIf { it.isNotBlank() } ?: from
             noteHeard(sender)
             val peerIp = json.optString("ip", "")
+            val stamp = json.optString("t", "")
             if (action.isNotEmpty() && callId.isNotEmpty()) {
-                onControl?.invoke(sender, action, callId, name, peerIp)
+                onControl?.invoke(sender, action, callId, name, peerIp, stamp)
             }
         }
     }

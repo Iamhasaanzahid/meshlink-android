@@ -144,6 +144,8 @@ object OnlineCallManager {
     private var timerJob: Job? = null
     private var exportRunnable: Runnable? = null
     private var ringTimeout: Runnable? = null
+    /** Short grace period before restarting ICE after a network blip. */
+    private var disconnectCheck: Runnable? = null
     /** Call IDs already seen, so replayed rings cannot ring the phone again. */
     private val seenCalls = mutableMapOf<String, Long>()
     private var pendingOffer: String? = null
@@ -244,13 +246,23 @@ object OnlineCallManager {
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED,
-                PeerConnection.IceConnectionState.COMPLETED -> onConnected()
+                PeerConnection.IceConnectionState.COMPLETED -> {
+                    cancelDisconnectCheck()
+                    onConnected()
+                }
+
+                PeerConnection.IceConnectionState.DISCONNECTED -> {
+                    // Mobile networks briefly drop ICE all the time. Give it a
+                    // moment before forcing a fresh route instead of ending
+                    // a perfectly good call.
+                    val s = _state.value
+                    if (s.relayed && s.phase == Phase.CONNECTED) armDisconnectCheck()
+                }
 
                 PeerConnection.IceConnectionState.FAILED -> {
                     val s = _state.value
-                    if (s.relayed && iceRestarts < 2 &&
-                        (s.phase == Phase.DIALING || s.phase == Phase.CONNECTING ||
-                            s.phase == Phase.PREPARING)
+                    if (s.relayed && iceRestarts < 3 && s.phase != Phase.ENDED &&
+                        s.phase != Phase.FAILED
                     ) {
                         iceRestarts++
                         restartIceWithRenegotiation()
@@ -1080,6 +1092,28 @@ object OnlineCallManager {
         ringTimeout = null
     }
 
+    private fun armDisconnectCheck() {
+        cancelDisconnectCheck()
+        val runnable = Runnable {
+            val s = _state.value
+            if (s.relayed && s.phase == Phase.CONNECTED) {
+                if (iceRestarts < 3) {
+                    iceRestarts++
+                    restartIceWithRenegotiation()
+                } else {
+                    fail("Call network kharab ho gaya. Dobara try karein.")
+                }
+            }
+        }
+        disconnectCheck = runnable
+        handler.postDelayed(runnable, 3_000L)
+    }
+
+    private fun cancelDisconnectCheck() {
+        disconnectCheck?.let { handler.removeCallbacks(it) }
+        disconnectCheck = null
+    }
+
 
     // ---------------------------------------------------------- code export
 
@@ -1190,6 +1224,7 @@ object OnlineCallManager {
         cancelIncomingNotification()
         cancelExport()
         cancelRingTimeout()
+        cancelDisconnectCheck()
         unbindRenderers()
         pendingOffer = null
         pendingAccept = false
@@ -1224,6 +1259,8 @@ object OnlineCallManager {
         if (_state.value.phase == Phase.CONNECTED) return
         if (_state.value.phase == Phase.ENDED || _state.value.phase == Phase.FAILED) return
         cancelRingTimeout()
+        cancelDisconnectCheck()
+        iceRestarts = 0
         stopRinging()
         cancelIncomingNotification()
         _state.value = _state.value.copy(phase = Phase.CONNECTED, message = null, seconds = 0)
