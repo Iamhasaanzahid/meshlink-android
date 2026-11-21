@@ -1,6 +1,7 @@
 package com.meshlink.app.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.provider.Settings
 import android.content.pm.PackageManager
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.core.app.ActivityCompat
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -126,20 +129,21 @@ fun HomeScreen(
     val onlineCall by OnlineCallManager.state.collectAsState()
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var aiOpen by remember { mutableStateOf(false) }
+    var aiOpen by rememberSaveable { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var openPeer by rememberSaveable { mutableStateOf<String?>(null) }
     var openName by rememberSaveable { mutableStateOf("") }
-    var newChatOpen by remember { mutableStateOf(false) }
+    var newChatOpen by rememberSaveable { mutableStateOf(false) }
     var addContactOpen by remember { mutableStateOf(false) }
     var contactName by remember { mutableStateOf("") }
     var contactAddress by remember { mutableStateOf("") }
     var onlineCallOpen by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     var callPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var groupDialog by remember { mutableStateOf(false) }
-    var groupName by remember { mutableStateOf("") }
-    var groupMembers by remember { mutableStateOf("") }
+    var groupDialog by rememberSaveable { mutableStateOf(false) }
+    var groupName by rememberSaveable { mutableStateOf("") }
+    var groupMembers by rememberSaveable { mutableStateOf("") }
+    var groupError by remember { mutableStateOf<String?>(null) }
     var avatarPath by remember { mutableStateOf(SessionStore.avatarPath(context)) }
     val scope = rememberCoroutineScope()
     var pendingOnlineCall by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -166,6 +170,7 @@ fun HomeScreen(
     var myPhone by remember { mutableStateOf(SessionStore.phone(context)) }
     var smsFallback by remember { mutableStateOf(MeshSettings.smsFallback(context)) }
     var missingPerms by remember { mutableStateOf(PermissionsHelper.missing(context)) }
+    var permissionDialog by remember { mutableStateOf<String?>(null) }
     var onlineEnabled by remember { mutableStateOf(MeshSettings.onlineEnabled(context)) }
     var onlineBroker by remember { mutableStateOf(MeshSettings.onlineBroker(context)) }
 
@@ -187,12 +192,18 @@ fun HomeScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         missingPerms = PermissionsHelper.missing(context)
-        if (missingPerms.isNotEmpty()) {
-            Toast.makeText(
-                context,
-                "Still missing ${missingPerms.size} permission(s). Tap Allow again, or open Android settings.",
-                Toast.LENGTH_LONG,
-            ).show()
+        if (missingPerms.isEmpty()) return@rememberLauncherForActivityResult
+        val activity = context as? Activity
+        val blocked = missingPerms.any { permission ->
+            activity != null && !ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+        }
+        permissionDialog = if (blocked) {
+            "Android blocked these permissions for Mhzaly. Open App Info → Permissions " +
+                "(and Restricted settings on Android 13+), then allow them. " +
+                "The app cannot change this setting itself."
+        } else {
+            "These permissions are still off. Mhzaly keeps working, but nearby " +
+                "discovery, notifications and calls may be limited. You can allow them now."
         }
     }
 
@@ -217,11 +228,17 @@ fun HomeScreen(
         } else {
             MeshSettings.setSmsFallback(context, false)
             smsFallback = false
-            Toast.makeText(
-                context,
-                "SMS fallback needs the SMS permission. Everything else keeps working without it.",
-                Toast.LENGTH_LONG,
-            ).show()
+            val activity = context as? Activity
+            val blocked = PermissionsHelper.smsPermissions().any { permission ->
+                activity != null && !ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+            }
+            permissionDialog = if (blocked) {
+                "Android denied or restricted SMS access. Open App Info → Permissions " +
+                    "→ SMS and allow it, then come back. Everything else keeps working without SMS."
+            } else {
+                "SMS fallback needs the SMS permission. Everything else keeps " +
+                    "working without it, so it stays off for now."
+            }
         }
     }
 
@@ -234,6 +251,17 @@ fun HomeScreen(
             smsFallback = true
         } else {
             smsPermissionLauncher.launch(PermissionsHelper.smsPermissions())
+        }
+    }
+
+    fun openAppInfo() {
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${context.packageName}"),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 
@@ -454,44 +482,106 @@ fun HomeScreen(
         return
     }
 
+    val groupIdList = remember(groupMembers) {
+        groupMembers.split(Regex("[,\\s]+")).filter { it.isMeshLinkId() }.distinct()
+    }
+
     if (groupDialog) {
         AlertDialog(
-            onDismissRequest = { groupDialog = false },
-            title = { Text("New group") },
+            onDismissRequest = {
+                groupDialog = false
+                groupError = null
+            },
+            title = { Text("New group", fontWeight = FontWeight.SemiBold) },
             text = {
-                Column {
-                    OutlinedTextField(value = groupName, onValueChange = { groupName = it },
-                        label = { Text("Group name") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(value = groupMembers, onValueChange = { groupMembers = it },
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = {
+                            groupName = it
+                            groupError = null
+                        },
+                        label = { Text("Group name") },
+                        placeholder = { Text("Family, friends, team…") },
+                        singleLine = true,
+                        isError = groupName.isBlank() && groupError != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = groupMembers,
+                        onValueChange = {
+                            groupMembers = it
+                            groupError = null
+                        },
                         label = { Text("Members (Mhzaly IDs)") },
                         placeholder = { Text("1234567890, 9876543210") },
-                        modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(6.dp))
-                    Text("Everyone needs Online mode for a group to cross countries.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                        isError = groupIdList.isEmpty() && groupError != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Text(
+                            "Everyone needs Online mode for a group to cross countries. " +
+                                "${groupIdList.size} valid Mhzaly ID(s) added.",
+                            modifier = Modifier.padding(12.dp),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                    if (groupError != null) {
+                        Text(
+                            groupError!!,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val title = groupName.trim()
-                    if (title.isEmpty() || !groupMembers.split(Regex("[,\\s]+")).any { it.isMeshLinkId() }) {
-                        Toast.makeText(context,
-                            "Add a name and at least one 10-digit Mhzaly ID.",
-                            Toast.LENGTH_SHORT).show()
-                        return@TextButton
-                    }
-                    val gid = ChatRepository.createGroup(title, groupMembers)
-                    openPeer = gid
-                    openName = title
-                    groupDialog = false
-                    groupName = ""
-                    groupMembers = ""
-                }) { Text("Create") }
+                TextButton(
+                    onClick = {
+                        val title = groupName.trim()
+                        if (title.isEmpty() || groupIdList.isEmpty()) {
+                            groupError = "Add a name and at least one 10-digit Mhzaly ID."
+                            return@TextButton
+                        }
+                        val gid = ChatRepository.createGroup(title, groupMembers)
+                        openPeer = gid
+                        openName = title
+                        groupDialog = false
+                        groupError = null
+                        groupName = ""
+                        groupMembers = ""
+                    },
+                    enabled = groupName.isNotBlank() && groupIdList.isNotEmpty(),
+                ) { Text("Create") }
             },
-            dismissButton = { TextButton(onClick = { groupDialog = false }) { Text("Cancel") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    groupDialog = false
+                    groupError = null
+                }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (permissionDialog != null) {
+        AlertDialog(
+            onDismissRequest = { permissionDialog = null },
+            title = { Text("Permission needed", fontWeight = FontWeight.SemiBold) },
+            text = { Text(permissionDialog!!, fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    openAppInfo()
+                    permissionDialog = null
+                }) { Text("Open App Info") }
+            },
+            dismissButton = {
+                TextButton(onClick = { permissionDialog = null }) { Text("Later") }
+            },
         )
     }
 
@@ -756,8 +846,14 @@ fun HomeScreen(
                 }
             },
             bottomBar = {
-                // Elevated glassy rail: the two primary destinations stay here,
-                // everything else lives in the side drawer.
+                // The rail belongs to the two primary destinations only. Hiding it
+                // for inner screens, drawers and dialogs stops the old bar from
+                // bleeding through full-screen views and clipped bottom content.
+                val showRail = tab in 0..1 &&
+                    !aiOpen && !drawerState.isOpen && !groupDialog &&
+                    !newChatOpen && !addContactOpen && !onlineCallOpen &&
+                    callPrompt == null && permissionDialog == null
+                if (showRail) {
                 Surface(
                     color = tokens.navBar.copy(alpha = 0.97f),
                     shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -825,6 +921,7 @@ fun HomeScreen(
                             label = { Text(label) },
                         )
                     }
+                }
                 }
                 }
                 }
@@ -958,7 +1055,6 @@ fun HomeScreen(
                             myPhone = it
                             SessionStore.savePhone(context, it)
                         },
-                        missingPermissions = missingPerms.size,
                         missingTitles = PermissionsHelper.core()
                             .filter { !PermissionsHelper.granted(context, it.permission) }
                             .map { it.title }
@@ -1018,7 +1114,8 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .width(390.dp),
+                    .fillMaxWidth()
+                    .widthIn(max = 460.dp),
                 color = tokens.drawer,
                 shadowElevation = 24.dp,
             ) {

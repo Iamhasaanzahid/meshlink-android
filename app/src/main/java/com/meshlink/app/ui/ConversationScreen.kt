@@ -110,8 +110,10 @@ import com.meshlink.app.data.GroupStore
 import com.meshlink.app.data.Message
 import com.meshlink.app.data.MsgKind
 import com.meshlink.app.data.MsgStatus
+import com.meshlink.app.data.SessionStore
 import com.meshlink.app.service.MeshService
 import com.meshlink.app.util.MediaFiles
+import com.meshlink.app.util.MessageText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1239,7 +1241,7 @@ private fun MessageBubble(
                 }
 
                 message.kind == MsgKind.AUDIO && message.mediaPath != null -> {
-                    VoiceBubble(path = message.mediaPath!!, fromMe = message.fromMe)
+                    VoiceBubble(path = message.mediaPath, fromMe = message.fromMe)
                 }
 
                 message.kind == MsgKind.DOCUMENT && message.mediaPath != null -> {
@@ -1278,7 +1280,13 @@ private fun MessageBubble(
                 }
 
                 else -> Text(
-                    text = message.body,
+                    text = remember(message.body, message.chatId) {
+                        MessageText.display(
+                            message.body,
+                            message.chatId,
+                            SessionStore.uin(context).orEmpty(),
+                        )
+                    },
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
                     color = onBubble,

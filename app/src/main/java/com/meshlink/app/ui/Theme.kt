@@ -1,5 +1,6 @@
 package com.meshlink.app.ui
 
+import android.app.Activity
 import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,15 +10,19 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 
 /* MeshLink identity: deep charcoal-violet surfaces, electric lilac light,
  * with mint / coral / amber / sky as harmonious supporting accents. */
@@ -303,6 +308,23 @@ fun MhzalyTheme(
         AppThemeMode.DARK -> true
         AppThemeMode.LIGHT -> false
         AppThemeMode.SYSTEM -> if (ThemeController.loaded) systemDark else darkTheme
+    }
+
+    // Keep Android's status/navigation bars in sync with the selected theme.
+    // Without this, switching Light/Dark/System can leave a stale white or
+    // black system bar behind the newly themed Compose content.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = Color.Transparent.toArgb()
+            window.navigationBarColor = Color.Transparent.toArgb()
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !useDark
+                isAppearanceLightNavigationBars = !useDark
+            }
+        }
     }
 
     androidx.compose.runtime.CompositionLocalProvider(

@@ -1,7 +1,10 @@
 package com.meshlink.app.ui
 
+import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.net.wifi.p2p.WifiP2pDevice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.app.ActivityCompat
 import androidx.compose.runtime.rememberCoroutineScope
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -70,6 +74,7 @@ import kotlin.math.roundToInt
 import com.meshlink.app.BuildConfig
 import com.meshlink.app.util.AppUpdater
 import com.meshlink.app.util.AppUpdate
+import com.meshlink.app.util.PermissionsHelper
 
 @Composable
 fun SettingsScreen(
@@ -84,7 +89,6 @@ fun SettingsScreen(
     onMaxHopsChange: (Int) -> Unit,
     myPhone: String,
     onSavePhone: (String) -> Unit,
-    missingPermissions: Int,
     missingTitles: List<String>,
     onRequestPermissions: () -> Unit,
     onlineEnabled: Boolean,
@@ -107,6 +111,20 @@ fun SettingsScreen(
     val tokens = MeshTokens.palette
     val themeMode = ThemeController.mode
     val scope = rememberCoroutineScope()
+
+    // Recomputed every composition so returning from App Info / Android
+    // Recents always shows the real runtime state, not a stale "all granted".
+    val coreMissing = PermissionsHelper.missing(context)
+    val smsAllowed = PermissionsHelper.smsGranted(context)
+    val locationNeeded = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+    val locationAllowed = !locationNeeded ||
+        PermissionsHelper.granted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+        PermissionsHelper.granted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+    val activity = context as? Activity
+    val anyBlocked = activity != null && (coreMissing + PermissionsHelper.smsPermissions()).any { p ->
+        !PermissionsHelper.granted(context, p) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, p)
+    }
     var updateInfo by remember { mutableStateOf<AppUpdate?>(null) }
     var updateChecking by remember { mutableStateOf(false) }
     var updateDownloading by remember { mutableStateOf(false) }
@@ -160,7 +178,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onOpenMenu) {
@@ -421,6 +439,15 @@ fun SettingsScreen(
             }
         }
 
+        val bleActive = status["bluetoothLeActive"] == true
+        val blePeersCount = status["blePeers"] as? Int ?: 0
+        val wifiDirectActive = status["wifiDirectActive"] == true
+        val wifiPeersCount = status["wifiPeers"] as? Int ?: 0
+        val wifiGroupFormed = status["wifiGroup"] == true
+        val wifiLanActive = status["wifiLanActive"] == true
+        val wifiLanPeersCount = status["wifiLanPeers"] as? Int ?: 0
+        val smsReady = status["radioSmsAvailable"] == true
+
         Spacer(Modifier.height(18.dp))
         SectionTitle("Radios")
         Card(
@@ -432,36 +459,43 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
                 InfoRow(
                     "Cellular radio (SMS)",
-                    if (status["radioSmsAvailable"] == true) "SIM ready · works anywhere with signal"
-                    else if (status["smsFallbackEnabled"] == true) "SMS permission or SIM not ready"
-                    else "Off · enable SMS fallback below",
-                    status["radioSmsAvailable"] == true,
+                    when {
+                        smsReady -> "SIM ready · works anywhere with signal"
+                        smsFallback -> "SMS permission or SIM not ready · fallback off"
+                        else -> "Off · enable SMS fallback below"
+                    },
+                    smsReady,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 InfoRow(
                     "Bluetooth LE",
-                    "${status["blePeers"] ?: 0} peer(s) · 10–50 m per hop",
-                    status["bluetoothLeActive"] == true,
+                    when {
+                        !bleActive -> "Off · turn on Bluetooth to find nearby phones"
+                        blePeersCount == 0 -> "0 peers · keep Bluetooth and Mhzaly open on another phone"
+                        else -> "$blePeersCount peer(s) · 10–50 m per hop"
+                    },
+                    bleActive,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 InfoRow(
                     "Wi-Fi Direct",
-                    if (status["wifiGroup"] == true) {
-                        "Group formed · ${if (status["wifiGroupOwner"] == true) "owner" else "client"}"
-                    } else {
-                        "${status["wifiPeers"] ?: 0} peer(s) nearby · 50–200 m per hop"
+                    when {
+                        !wifiDirectActive -> "Off · turn on Wi-Fi Direct"
+                        wifiGroupFormed -> "Group formed · ${if (status["wifiGroupOwner"] == true) "owner" else "client"}"
+                        wifiPeersCount == 0 -> "0 peers nearby · tap Search on both phones"
+                        else -> "$wifiPeersCount peer(s) nearby · 50–200 m per hop"
                     },
-                    status["wifiDirectActive"] == true,
+                    wifiDirectActive,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 InfoRow(
                     "Wi-Fi (same network)",
-                    if (status["wifiLanActive"] == true) {
-                        "${status["wifiLanPeers"] ?: 0} phone(s) on this network · free, no data"
-                    } else {
-                        "not listening"
+                    when {
+                        !wifiLanActive -> "Not listening · connect to Wi-Fi or a hotspot"
+                        wifiLanPeersCount == 0 -> "0 phones yet · both phones must join the same network"
+                        else -> "$wifiLanPeersCount phone(s) on this network · free, no data"
                     },
-                    status["wifiLanActive"] == true,
+                    wifiLanActive,
                 )
             }
         }
@@ -518,17 +552,35 @@ fun SettingsScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
-                InfoRow("Bluetooth LE", "10–50 m per hop · no SIM, no router", true)
+                InfoRow(
+                    "Bluetooth LE",
+                    if (bleActive) "$blePeersCount peer(s) · 10–50 m per hop · no SIM"
+                    else "Off · Bluetooth is disabled or unavailable",
+                    bleActive,
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                InfoRow("Wi-Fi Direct", "50–200 m per hop · no router", true)
+                InfoRow(
+                    "Wi-Fi Direct",
+                    if (wifiDirectActive) "$wifiPeersCount peer(s) nearby · 50–200 m per hop · no router"
+                    else "Off · Wi-Fi Direct is not active",
+                    wifiDirectActive,
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                InfoRow("Wi-Fi (same network)", "whole house/campus · router or hotspot", true)
+                InfoRow(
+                    "Wi-Fi (same network)",
+                    if (wifiLanActive) "$wifiLanPeersCount phone(s) · whole house/campus · router or hotspot"
+                    else "Off · connect both phones to the same Wi-Fi or hotspot",
+                    wifiLanActive,
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 InfoRow(
                     "Cellular radio (SMS)",
-                    if (status["smsFallbackEnabled"] == true) "city-wide or nationwide · opt-in"
-                    else "off · switch it on in Settings",
-                    status["smsFallbackEnabled"] == true,
+                    when {
+                        smsReady -> "city-wide or nationwide · opt-in"
+                        smsFallback -> "blocked · allow SMS in Android settings"
+                        else -> "off · switch it on in Settings"
+                    },
+                    smsReady,
                 )
             }
         }
@@ -598,6 +650,14 @@ fun SettingsScreen(
             }
         }
 
+        val visiblePermissionTitles = buildList {
+            addAll(missingTitles)
+            if (!smsAllowed && smsFallback) add("SMS")
+            if (!locationAllowed) add("Location")
+        }.distinct()
+        val permissionProblem = coreMissing.isNotEmpty() || !locationAllowed ||
+            (smsFallback && !smsAllowed)
+
         Spacer(Modifier.height(18.dp))
         SectionTitle("Privacy")
         Card(
@@ -613,13 +673,18 @@ fun SettingsScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 InfoRow(
                     "Permissions",
-                    if (missingPermissions == 0) "all granted"
-                    else "$missingPermissions missing · messaging may not work",
-                    missingPermissions == 0,
+                    when {
+                        anyBlocked && permissionProblem ->
+                            "blocked by Android · open App Info → Restricted settings"
+                        permissionProblem ->
+                            "${visiblePermissionTitles.size} not allowed · ${visiblePermissionTitles.joinToString(", ")}"
+                        else -> "all granted"
+                    },
+                    !permissionProblem,
                 )
             }
         }
-        if (missingPermissions > 0) {
+        if (permissionProblem) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -631,29 +696,44 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        "Allow these so messaging works",
+                        if (anyBlocked) "Android blocked these permissions"
+                        else "Allow these so messaging works",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     Spacer(Modifier.height(6.dp))
-                    missingTitles.forEach { title ->
-                        Text(
-                            "•  $title",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
+                    Text(
+                        if (anyBlocked) {
+                            "Open App Info → Permissions / Restricted settings and allow " +
+                                "SMS and Location. Mhzaly cannot change this from inside the app."
+                        } else {
+                            "SMS and Location are optional, but without them nearby " +
+                                "discovery and SMS fallback stay off."
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    if (visiblePermissionTitles.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        visiblePermissionTitles.forEach { title ->
+                            Text(
+                                "•  $title",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     Button(
-                        onClick = onRequestPermissions,
+                        onClick = if (anyBlocked) onOpenSystemSettings else onRequestPermissions,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
-                    ) { Text("Allow now") }
+                    ) { Text(if (anyBlocked) "Open App Info" else "Allow now") }
                     TextButton(
                         onClick = onOpenSystemSettings,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("If nothing appears, open Android settings") }
+                    ) { Text("Open Android settings") }
                 }
             }
         }

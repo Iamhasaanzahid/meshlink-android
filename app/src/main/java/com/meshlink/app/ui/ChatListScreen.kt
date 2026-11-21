@@ -43,11 +43,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meshlink.app.data.Chat
+import com.meshlink.app.data.SessionStore
+import com.meshlink.app.util.MessageText
 
 @Composable
 fun ChatListScreen(
@@ -136,6 +139,7 @@ private fun ChatRow(
     onToggleMute: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val myUin = SessionStore.uin(LocalContext.current).orEmpty()
     val tokens = MeshTokens.palette
     val unread = chat.unread > 0
     val rowColors = if (pinned) {
@@ -244,7 +248,8 @@ private fun ChatRow(
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
-                        text = chat.lastMessage.ifBlank { "Message" },
+                        text = MessageText.preview(chat.lastMessage, chat.peer, myUin)
+                            .ifBlank { "Message" },
                         fontSize = 13.sp,
                         color = if (unread) MaterialTheme.colorScheme.onSurface
                         else MaterialTheme.colorScheme.onSurfaceVariant,
