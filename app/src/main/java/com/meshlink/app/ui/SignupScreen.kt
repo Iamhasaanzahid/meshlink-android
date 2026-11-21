@@ -139,7 +139,7 @@ fun SignupScreen(
 
     // Light background so the purple title and body text stay readable.
     val gradient = Brush.verticalGradient(
-        listOf(Color(0xFFF3EDF7), Color(0xFFFEF7FF), Color.White)
+        listOf(Color(0xFFF0EEF5), Color(0xFFF7F5FA), Color(0xFFF1EEF7))
     )
 
     Box(
@@ -395,7 +395,7 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
 private fun RadioStatusCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0x99FFFFFF)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xCCF8F6FB)),
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(2.dp, Color(0x266750A4)),
     ) {

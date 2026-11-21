@@ -37,7 +37,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -45,8 +44,6 @@ import java.util.Date
 import java.util.Locale
 
 private const val CLOUD_AI_URL = "https://mhzaly-ai.mhzaly.workers.dev/api/chat"
-private const val DEFAULT_BASE_URL = "http://192.168.1.50:11434"
-private const val DEFAULT_MODEL = "llama3.2"
 
 private val AI_PROMPTS = listOf(
     "Khaana suggest karo",
@@ -148,7 +145,7 @@ fun AiScreen(onBack: () -> Unit) {
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    "Private everyday assistant",
+                                    "Facts, maths, plans aur daily baat",
                                     color = Color.White.copy(alpha = 0.88f),
                                     fontSize = 11.sp,
                                 )
@@ -327,22 +324,6 @@ private fun TypingBubble() {
     }
 }
 
-/** Internal probe — never shown in the UI. Keeps replies instant when offline. */
-private suspend fun probeEngine(): Boolean = withContext(Dispatchers.IO) {
-    var connection: HttpURLConnection? = null
-    try {
-        connection = URL(DEFAULT_BASE_URL.trimEnd('/') + "/api/tags").openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 1_500
-        connection.readTimeout = 1_500
-        connection.responseCode in 200..299
-    } catch (e: Exception) {
-        false
-    } finally {
-        connection?.disconnect()
-    }
-}
-
 /** Cloud brain for real questions. Returns null when offline or unavailable. */
 private suspend fun chatWithCloud(
     history: List<AiMessage>,
@@ -396,60 +377,7 @@ private suspend fun chatWithEngine(
     val cloud = chatWithCloud(history, prompt)
     if (cloud != null) return@withContext cloud
 
-    if (!probeEngine()) return@withContext builtIn.text
-
-    var connection: HttpURLConnection? = null
-    try {
-        val messages = JSONArray()
-        messages.put(
-            JSONObject()
-                .put("role", "system")
-                .put(
-                    "content",
-                    "You are a friendly companion inside Mhzaly. Chat in natural Roman Urdu, Hinglish or English, matching the user's language and mood. Answer like a real friend in one to three short sentences: notice how they feel, reply warmly, then ask one simple follow-up. Talk about daily life, food, plans, study, work, family, love, jokes and small talk. Never say you are an AI, a model or an assistant; never mention servers, setup, Ollama or technical configuration. No robotic refusals, no long monologues.",
-                ),
-        )
-        history.forEach { message ->
-            messages.put(
-                JSONObject()
-                    .put("role", message.role)
-                    .put("content", message.text),
-            )
-        }
-        val payload = JSONObject()
-            .put("model", DEFAULT_MODEL)
-            .put("stream", false)
-            .put("messages", messages)
-            .toString()
-
-        connection = URL(DEFAULT_BASE_URL.trimEnd('/') + "/api/chat").openConnection() as HttpURLConnection
-        connection.requestMethod = "POST"
-        connection.connectTimeout = 1_500
-        connection.readTimeout = 8_000
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        connection.setRequestProperty("Accept", "application/json")
-        connection.doOutput = true
-        connection.outputStream.use { out ->
-            out.write(payload.toByteArray(Charsets.UTF_8))
-        }
-
-        val code = connection.responseCode
-        val body = connection.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) return@withContext builtIn.text
-        val json = JSONObject(body)
-        val content = (json.optJSONObject("message")?.optString("content", "").orEmpty())
-            .ifBlank { json.optString("response", "") }
-        val clean = cleanEngineReply(content)
-        // A repeated or mechanical answer is worse than a natural built-in one.
-        if (clean == null || history.any { it.text == clean }) return@withContext builtIn.text
-        return@withContext clean
-    } catch (e: IOException) {
-        return@withContext builtIn.text
-    } catch (e: Exception) {
-        return@withContext builtIn.text
-    } finally {
-        connection?.disconnect()
-    }
+    return@withContext builtIn.text
 }
 
 /**
@@ -459,7 +387,7 @@ private suspend fun chatWithEngine(
 private data class BuiltInReply(val text: String, val confident: Boolean)
 
 private enum class ChatIntent {
-    GREETING, HOW_ARE_YOU, THANKS, SHORT_ACK, IDENTITY,
+    GREETING, HOW_ARE_YOU, THANKS, SHORT_ACK, IDENTITY, MATH,
     TIRED, BORED, HAPPY, SAD, ANGRY, ANXIOUS, SICK,
     FOOD, PLAN, WORK, STUDY, FAMILY, LOVE, JOKE,
     WEATHER, HEALTH, TIME,
@@ -498,6 +426,9 @@ private fun isShortAck(text: String): Boolean {
 private fun detectChatIntent(text: String): ChatIntent {
     val t = normalizeChat(text)
     return when {
+        // Basic arithmetic works instantly, even with no internet.
+        Regex("^\\s*-?\\d+(?:\\.\\d+)?\\s*(?:\\+|-|\\*|/|x|×|÷)\\s*-?\\d+(?:\\.\\d+)?\\s*=??\\s*$")
+            .matches(t) -> ChatIntent.MATH
         isShortAck(t) -> ChatIntent.SHORT_ACK
         has(t, "\\b(hi+|hey|hello|hy|yo|salam|assalam|alaikum|aoa|good morning|gm|good night)\\b") -> ChatIntent.GREETING
         has(
@@ -570,6 +501,31 @@ private fun continuityLead(topic: ChatIntent?): String = when (topic) {
     else -> ""
 }
 
+/** Small offline calculator so basic maths never depends on the network. */
+private fun solveMath(text: String): String {
+    val match = Regex(
+        "(-?\\d+(?:\\.\\d+)?)\\s*(\\+|-|\\*|/|x|×|÷)\\s*(-?\\d+(?:\\.\\d+)?)",
+    ).find(text) ?: return "Numbers thoda clear likho — jaise 2 + 2 ya 10 / 2."
+    val a = match.groupValues[1].toDoubleOrNull()
+        ?: return "Numbers thoda clear likho — jaise 2 + 2 ya 10 / 2."
+    val b = match.groupValues[3].toDoubleOrNull()
+        ?: return "Numbers thoda clear likho — jaise 2 + 2 ya 10 / 2."
+    val op = match.groupValues[2]
+    if ((op == "/" || op == "÷") && b == 0.0) return "Zero se divide nahi hota 🙂"
+    val result = when (op) {
+        "+" -> a + b
+        "-" -> a - b
+        "*", "x", "×" -> a * b
+        else -> a / b
+    }
+    val pretty = if (result % 1.0 == 0.0) {
+        result.toLong().toString()
+    } else {
+        String.format(Locale.US, "%.4f", result).trimEnd('0').trimEnd('.')
+    }
+    return "$a $op $b = $pretty"
+}
+
 /** Built-in answer for a detected intent, with deterministic variation. */
 private fun replyFor(intent: ChatIntent, text: String, history: List<AiMessage>): String {
     val topic = previousTopic(history)
@@ -578,6 +534,7 @@ private fun replyFor(intent: ChatIntent, text: String, history: List<AiMessage>)
     fun variant(options: List<String>): String = options[(occurrence - 1) % options.size]
 
     return when (intent) {
+        ChatIntent.MATH -> solveMath(text)
         ChatIntent.SHORT_ACK -> shortAckReply(topic, text, history)
         ChatIntent.GREETING -> variant(
             listOf(

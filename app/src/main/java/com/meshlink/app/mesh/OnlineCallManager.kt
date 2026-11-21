@@ -56,29 +56,21 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import kotlin.math.abs
 
 /**
- * ONLINE CALLS — peer-to-peer voice over the internet, like WhatsApp calls.
+ * ONLINE CALLS — WhatsApp-style voice/video over the internet.
  *
- * There is no MeshLink server. The two phones are connected by exchanging one
- * short code each way (copy/paste, or share through any messenger):
+ * Signalling travels through the encrypted online relay, and media uses
+ * WebRTC with DTLS-SRTP end-to-end encryption. A direct peer-to-peer path is
+ * preferred; when one phone is on mobile data and the other on Wi-Fi, ICE
+ * falls back to Cloudflare's TURN relay with short-lived credentials.
  *
- *   1. Caller  → "Start call" → app produces an OFFER code.
- *   2. Callee  → pastes the offer → app produces an ANSWER code.
- *   3. Caller  → pastes the answer → audio flows directly between the phones.
- *
- * Media is encrypted end to end with DTLS-SRTP, which WebRTC always enables.
- * No server ever sees or relays the audio: the code contains only the SDP
- * (connection details), and the audio path is direct P2P. Public STUN servers
- * are used only to discover the public address; they never carry audio.
- *
- * Limits, stated honestly: a few very strict mobile/CGNAT networks block
- * direct peer-to-peer UDP. Such networks need a TURN relay, which is not
- * free at scale and is not included. On those networks the call will fail
- * with a clear message; switching one phone to Wi-Fi or a hotspot usually
- * fixes it.
+ * The old copy/paste offer/answer codes remain available as an offline
+ * fallback, but normal 10-digit Mhzaly IDs ring automatically.
  */
 object OnlineCallManager {
 
@@ -160,6 +152,10 @@ object OnlineCallManager {
     private var remoteDescriptionSet = false
     /** Automatic ICE-restart attempts when a mobile network blocks the first path. */
     private var iceRestarts = 0
+    /** Fresh Cloudflare TURN credentials, refreshed in the background. */
+    @Volatile private var turnIce: List<PeerConnection.IceServer> = emptyList()
+    @Volatile private var turnFetchedAt: Long = 0L
+    private var turnJob: Job? = null
 
     /**
      * Set by MeshService: publishes one WebRTC signalling message to
@@ -171,6 +167,9 @@ object OnlineCallManager {
 
     fun attach(context: Context) {
         appContext = context.applicationContext
+        // Pre-warm the TURN relay so the first mobile-data <-> Wi-Fi call has
+        // a working relay candidate instead of relying on STUN alone.
+        refreshTurnCredentials()
     }
 
     private fun micGranted(): Boolean {
@@ -217,33 +216,91 @@ object OnlineCallManager {
         return created
     }
 
-    private fun iceServers(): List<PeerConnection.IceServer> = listOf(
+    private fun staticStun(): List<PeerConnection.IceServer> = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer(),
         PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun.services.mozilla.com:3478").createIceServer(),
-        // Mobile data <-> Wi-Fi crosses two different NATs (often CGNAT), so
-        // STUN alone is not enough. Every route below can relay encrypted media.
-        // UDP first, then TCP 80/443 and TLS 443 for strict firewalls.
-        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:3478?transport=udp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:3478?transport=tcp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80?transport=tcp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turns:openrelay.metered.ca:443?transport=tcp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:relay.metered.ca:80?transport=tcp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
     )
+
+    /**
+     * Cloudflare's public TURN relay is fetched with short-lived credentials.
+     * It is the route that makes mobile-data <-> Wi-Fi calls work even when
+     * both sides are behind CGNAT or a strict carrier firewall.
+     */
+    private fun iceServers(): List<PeerConnection.IceServer> {
+        val turn = turnIce
+        return if (turn.isEmpty()) staticStun() else turn + staticStun()
+    }
+
+    private fun refreshTurnCredentials(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && turnIce.isNotEmpty() && now - turnFetchedAt < 6 * 60 * 60 * 1000L) return
+        if (turnJob?.isActive == true) return
+        turnJob = scope.launch(Dispatchers.IO) {
+            val fresh = runCatching { fetchCloudflareTurn() }.getOrDefault(emptyList())
+            if (fresh.isNotEmpty()) {
+                turnIce = fresh
+                turnFetchedAt = System.currentTimeMillis()
+            }
+        }
+    }
+
+    private fun fetchCloudflareTurn(): List<PeerConnection.IceServer> {
+        // Prefer our own worker so carrier DNS/firewalls cannot block the
+        // speed-test domain. Fall back to Cloudflare directly.
+        val sources = listOf(
+            "https://mhzaly-ai.mhzaly.workers.dev/api/turn" to true,
+            "https://speed.cloudflare.com/turn-creds" to false,
+        )
+        for ((url, native) in sources) {
+            val servers = runCatching { fetchTurnSource(url, native) }.getOrDefault(emptyList())
+            if (servers.isNotEmpty()) return servers
+        }
+        Log.w(TAG, "TURN credentials unavailable from all sources")
+        return emptyList()
+    }
+
+    private fun fetchTurnSource(url: String, native: Boolean): List<PeerConnection.IceServer> {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        return try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 4_000
+            connection.readTimeout = 7_000
+            connection.setRequestProperty("Origin", "https://speed.cloudflare.com")
+            connection.setRequestProperty("Referer", "https://speed.cloudflare.com/")
+            connection.setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36",
+            )
+            if (native) connection.setRequestProperty("X-Mhzaly-Client", "android")
+            if (connection.responseCode !in 200..299) return emptyList()
+            val body = connection.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = JSONObject(body)
+            if (json.has("ok") && !json.optBoolean("ok", false)) return emptyList()
+            val username = json.optString("username")
+            val credential = json.optString("credential")
+            val urls = json.optJSONArray("urls") ?: return emptyList()
+            if (username.isBlank() || credential.isBlank()) return emptyList()
+            buildList {
+                for (i in 0 until urls.length()) {
+                    val candidate = urls.optString(i).trim()
+                    if (candidate.isNotBlank()) {
+                        add(
+                            PeerConnection.IceServer.builder(candidate)
+                                .setUsername(username)
+                                .setPassword(credential)
+                                .createIceServer(),
+                        )
+                    }
+                }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     private val observer = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
@@ -560,6 +617,7 @@ object OnlineCallManager {
             return
         }
         reset(keepAudio = false)
+        refreshTurnCredentials()
         val id = UUID.randomUUID().toString().take(8)
         _state.value = Ui(
             phase = Phase.DIALING,
@@ -630,6 +688,7 @@ object OnlineCallManager {
         stopRinging()
         cancelIncomingNotification()
         cancelRingTimeout()
+        refreshTurnCredentials()
         _state.value = s.copy(phase = Phase.CONNECTING, message = null)
         enterAudioMode()
         armRingTimeout(s.callId)

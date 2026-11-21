@@ -117,7 +117,7 @@ fun VerifyEmailScreen(uin: String, onVerified: (email: String) -> Unit) {
     }
 
     val gradient = Brush.verticalGradient(
-        listOf(Color(0xFFF3EDF7), Color(0xFFFEF7FF), Color.White)
+        listOf(Color(0xFFF0EEF5), Color(0xFFF7F5FA), Color(0xFFF1EEF7))
     )
 
     Box(
