@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,6 +93,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -123,6 +125,7 @@ fun ConversationScreen(
     onBack: () -> Unit,
     onCall: (peer: String, name: String) -> Unit,
     onVideoCall: (peer: String, name: String) -> Unit = { _, _ -> },
+    onNearbyCall: (peer: String, name: String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val tokens = MeshTokens.palette
@@ -137,6 +140,8 @@ fun ConversationScreen(
     val listState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
+    var radioOpen by remember { mutableStateOf(false) }
+    var radioPending by remember { mutableStateOf(false) }
     var addContactOpen by remember { mutableStateOf(false) }
     var attachOpen by remember { mutableStateOf(false) }
     var contactName by remember { mutableStateOf("") }
@@ -269,6 +274,17 @@ fun ConversationScreen(
         if (granted) beginVoiceCapture() else toast("Microphone permission is needed")
     }
 
+    val radioPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && radioPending) {
+            radioOpen = true
+        } else if (!granted) {
+            toast("Microphone permission is needed for radio mode")
+        }
+        radioPending = false
+    }
+
     fun startVoice() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -293,6 +309,7 @@ fun ConversationScreen(
             )
             if (sent == null) toast("Voice message could not be sent")
         } else {
+            if (send && file != null) toast("Thoda der tak dabakar bolein")
             file?.delete()
         }
         recordSeconds = 0
@@ -427,6 +444,31 @@ fun ConversationScreen(
                                 onClick = {
                                     menuOpen = false
                                     onVideoCall(chat.peer, chatTitle(chat))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Nearby call (free)") },
+                                leadingIcon = { Icon(Icons.Filled.Call, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onNearbyCall(chat.peer, chatTitle(chat))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Radio mode (hold to talk)") },
+                                leadingIcon = { Icon(Icons.Filled.Mic, null) },
+                                onClick = {
+                                    menuOpen = false
+                                    if (ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.RECORD_AUDIO,
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        radioOpen = true
+                                    } else {
+                                        radioPending = true
+                                        radioPermission.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
                                 },
                             )
                             if (GroupStore.isGroup(chat.peer)) {
@@ -823,6 +865,77 @@ fun ConversationScreen(
             }
         }
         }
+    }
+
+    if (radioOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!recording) radioOpen = false },
+            title = { Text("Radio mode") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Bluetooth, Wi-Fi ya internet — jis bhi signal se baat ho. " +
+                            "Button dabakar rakho, bolo, chhod do; voice note chala jayega.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        if (recording) tokens.amber else tokens.violet,
+                                        if (recording) tokens.violet else tokens.sky,
+                                    ),
+                                ),
+                            )
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onPress = {
+                                        startVoice()
+                                        tryAwaitRelease()
+                                        if (recording) stopVoice(send = true)
+                                    },
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Filled.Mic,
+                                contentDescription = "Hold to talk",
+                                tint = Color.White,
+                                modifier = Modifier.size(42.dp),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                if (recording) "Bol rahe ho… ${recordSeconds}s" else "Hold to talk",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Live call ke liye Wi-Fi/hotspot ya internet chahiye; " +
+                            "sirf Bluetooth ho to ye radio note best hai.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (recording) stopVoice(send = false)
+                    radioOpen = false
+                }) { Text("Close") }
+            },
+        )
     }
 
     if (addContactOpen) {

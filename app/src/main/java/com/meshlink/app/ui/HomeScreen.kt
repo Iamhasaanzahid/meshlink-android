@@ -343,31 +343,62 @@ fun HomeScreen(
         beginVideoCall(peer, name)
     }
 
+    fun localCallReady(): Boolean {
+        val mesh = engine ?: return false
+        return mesh.wifiHasGroup || (mesh.lanIsActive && !mesh.localLanIp().isNullOrBlank())
+    }
+
+    fun startNearbyCall(peer: String, name: String) {
+        val mesh = engine
+        if (mesh == null) {
+            Toast.makeText(context, "Mesh service is still starting.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!localCallReady()) {
+            Toast.makeText(
+                context,
+                "Nearby call ke liye dono phones same Wi-Fi/hotspot par hon ya " +
+                    "Wi-Fi Direct on ho. Bluetooth par live call nahi, voice note bhejein.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        if (CallManager.placeCall(peer, name)) return
+        Toast.makeText(
+            context,
+            "Nearby call start nahi hui. Wi-Fi Direct connect karke dobara try karein.",
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
     fun startCall(peer: String, name: String) {
         val mesh = engine
         val isUin = peer.isMeshLinkId()
 
-        // A MeshLink ID is an internet identity: always wait for the relay
-        // instead of falling straight into a local radio call that immediately
-        // dies when the peer is not nearby. This is the WhatsApp-style path.
+        // A Mhzaly ID is an internet identity, but calls should still work when
+        // both phones are nearby and the internet is off. Prefer the relay when
+        // it is live; otherwise use the free local Wi-Fi / Wi-Fi Direct path.
         if (isUin) {
+            if (onlineEnabled && mesh?.onlineIsConnected == true) {
+                OnlineCallManager.startRelayedCall(peer, name)
+                onlineCallOpen = true
+                return
+            }
+            if (localCallReady() && mesh != null && CallManager.placeCall(peer, name)) {
+                return
+            }
             if (!onlineEnabled) {
                 // Offer to switch the relay on instead of failing with a dead end.
                 callPrompt = peer to name
                 return
             }
-            if (mesh?.onlineIsConnected == true) {
-                OnlineCallManager.startRelayedCall(peer, name)
-                onlineCallOpen = true
-            } else {
-                pendingOnlineCall = peer to name
-                videoCallWanted = false
-                Toast.makeText(
-                    context,
-                    "Connecting to the internet relay…",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
+            pendingOnlineCall = peer to name
+            videoCallWanted = false
+            Toast.makeText(
+                context,
+                "Connecting to the internet relay…",
+                Toast.LENGTH_SHORT,
+            ).show()
             return
         }
 
@@ -470,6 +501,7 @@ fun HomeScreen(
             onBack = { openPeer = null },
             onCall = { peer, name -> startCall(peer, name) },
             onVideoCall = { peer, name -> startVideoCall(peer, name) },
+            onNearbyCall = { peer, name -> startNearbyCall(peer, name) },
         )
     } else {
         ModalNavigationDrawer(

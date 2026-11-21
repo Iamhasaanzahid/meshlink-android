@@ -537,7 +537,9 @@ fun SettingsScreen(
                 "Bluetooth and Wi-Fi Direct are short-range radios, and phone FM " +
                 "hardware is a receiver, not a transmitter (and broadcasting needs a " +
                 "licensed station). Long distances work by chaining phones with " +
-                "multi-hop relaying, or by the SMS radio.",
+                "multi-hop relaying, or by the SMS radio. Live calls need Wi-Fi, " +
+                "hotspot or internet; on Bluetooth-only links use Radio mode " +
+                "(hold to talk) in the chat menu.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
